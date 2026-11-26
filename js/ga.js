@@ -27,8 +27,10 @@ window.SGGA = (function () {
     return 'rgba(56, 189, 248, 0.14)';
   }
 
-  function renderGA(project, evalRes, selection, options, zoom, themeOverride) {
+  function renderGA(project, evalRes, selection, options, zoom, themeOverride, idPrefix) {
     const P = window.SGSLD.getPalette(themeOverride);
+    const px = idPrefix || '';
+    const isPrint = Boolean(px);
     const isLight = (themeOverride || (document.documentElement && document.documentElement.dataset.theme)) === 'light';
     const z = zoom || 1.0;
     const opts = Object.assign({ showHeatmap: true, showDimensions: true, showBusbars: true }, options || {});
@@ -37,9 +39,9 @@ window.SGGA = (function () {
 
     const scale = 0.24;
     const marginLeft = 105;
-    const marginTop = 98;
+    const marginTop = 104;
     const marginRight = 135;
-    const marginBottom = 85;
+    const marginBottom = 88;
 
     const boardPxW = totalWidthMm * scale;
     const boardPxH = panelHeightMm * scale;
@@ -49,25 +51,29 @@ window.SGGA = (function () {
     const xOf = (mm) => marginLeft + mm * scale;
     const yOf = (mm) => marginTop + mm * scale;
 
+    const sizeAttrs = isPrint
+      ? `width="100%" preserveAspectRatio="xMidYMid meet"`
+      : `width="${Math.round(svgW * z)}" height="${Math.round(svgH * z)}" data-base-width="${svgW}" data-base-height="${svgH}"`;
+
     const parts = [];
     parts.push(
-      `<svg id="ga-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="${Math.round(svgW * z)}" height="${Math.round(svgH * z)}" data-base-width="${svgW}" data-base-height="${svgH}" class="diagram-svg">`
+      `<svg id="${px}ga-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" ${sizeAttrs} class="diagram-svg">`
     );
 
     parts.push(`
       <defs>
-        <pattern id="ga-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+        <pattern id="${px}ga-grid" width="24" height="24" patternUnits="userSpaceOnUse">
           <path d="M 24 0 L 0 0 0 24" fill="none" stroke="${P.grid}" stroke-width="0.5" />
         </pattern>
-        <pattern id="ga-hatch-spare" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <pattern id="${px}ga-hatch-spare" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="10" stroke="${P.hatch}" stroke-width="2" />
         </pattern>
-        <marker id="dim-tick" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+        <marker id="${px}dim-tick" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
           <path d="M 2 8 L 8 2" stroke="${P.sub}" stroke-width="1.5" />
         </marker>
       </defs>
       <rect x="0" y="0" width="${svgW}" height="${svgH}" fill="${P.bg}" class="pan-bg" />
-      <rect x="0" y="0" width="${svgW}" height="${svgH}" fill="url(#ga-grid)" class="pan-bg" />
+      <rect x="0" y="0" width="${svgW}" height="${svgH}" fill="url(#${px}ga-grid)" class="pan-bg" />
     `);
 
     parts.push(`
@@ -82,9 +88,9 @@ window.SGGA = (function () {
     `);
 
     if (opts.showDimensions) {
-      const dimY = marginTop - 38;
+      const dimY = marginTop - 42;
       parts.push(`
-        <line x1="${xOf(0)}" y1="${dimY}" x2="${xOf(totalWidthMm)}" y2="${dimY}" stroke="#94a3b8" stroke-width="1" marker-start="url(#dim-tick)" marker-end="url(#dim-tick)" />
+        <line x1="${xOf(0)}" y1="${dimY}" x2="${xOf(totalWidthMm)}" y2="${dimY}" stroke="#94a3b8" stroke-width="1" marker-start="url(#${px}dim-tick)" marker-end="url(#${px}dim-tick)" />
         <line x1="${xOf(0)}" y1="${dimY - 5}" x2="${xOf(0)}" y2="${marginTop - 4}" stroke="#475569" stroke-width="0.8" />
         <line x1="${xOf(totalWidthMm)}" y1="${dimY - 5}" x2="${xOf(totalWidthMm)}" y2="${marginTop - 4}" stroke="#475569" stroke-width="0.8" />
         <rect x="${xOf(totalWidthMm / 2) - 44}" y="${dimY - 9}" width="88" height="16" rx="3" fill="${P.bg}" />
@@ -93,7 +99,7 @@ window.SGGA = (function () {
 
       const dimX = marginLeft - 42;
       parts.push(`
-        <line x1="${dimX}" y1="${yOf(0)}" x2="${dimX}" y2="${yOf(panelHeightMm)}" stroke="#94a3b8" stroke-width="1" marker-start="url(#dim-tick)" marker-end="url(#dim-tick)" />
+        <line x1="${dimX}" y1="${yOf(0)}" x2="${dimX}" y2="${yOf(panelHeightMm)}" stroke="#94a3b8" stroke-width="1" marker-start="url(#${px}dim-tick)" marker-end="url(#${px}dim-tick)" />
         <line x1="${dimX - 5}" y1="${yOf(0)}" x2="${marginLeft - 4}" y2="${yOf(0)}" stroke="#475569" stroke-width="0.8" />
         <line x1="${dimX - 5}" y1="${yOf(panelHeightMm)}" x2="${marginLeft - 4}" y2="${yOf(panelHeightMm)}" stroke="#475569" stroke-width="0.8" />
         <text x="${dimX - 8}" y="${yOf(panelHeightMm / 2)}" text-anchor="middle" fill="${P.title}" font-size="10.5" font-weight="700" font-family="JetBrains Mono, monospace" transform="rotate(-90 ${dimX - 8} ${yOf(panelHeightMm / 2)})">${panelHeightMm} mm</text>
@@ -108,19 +114,27 @@ window.SGGA = (function () {
 
       parts.push(`<g class="drop-col-zone" data-drop-col="${colIdx}">`);
 
-      if (opts.showDimensions) {
+      // Column Top Drag Grip Bar (click-hold-drag to reorder column)
+      if (!isPrint) {
+        parts.push(`
+          <g class="clickable draggable-item" data-select-type="column" data-col-index="${colIdx}" data-drag-col="${colIdx}" title="Click and hold to drag column left/right">
+            <rect x="${cx0 + 2}" y="${yOf(0) - 20}" width="${colW - 4}" height="17" rx="3" fill="${isColSel ? P.headerBgSel : P.headerBg}" stroke="${isColSel ? P.accent : P.cardBorder}" stroke-width="0.9" />
+            <text x="${cx0 + colW / 2}" y="${yOf(0) - 8}" text-anchor="middle" fill="${P.headerText}" font-size="8.6" font-weight="700" font-family="Inter, sans-serif">⋮⋮ ${esc(truncate(cr.col.name, 14))} (${cr.widthMm})</text>
+          </g>
+        `);
+      } else if (opts.showDimensions) {
         const subDimY = marginTop - 16;
         parts.push(`
           <line x1="${cx0}" y1="${subDimY}" x2="${cx0 + colW}" y2="${subDimY}" stroke="#64748b" stroke-width="0.9" />
-          <text x="${cx0 + colW / 2}" y="${subDimY - 3}" text-anchor="middle" fill="#94a3b8" font-size="9.5" font-family="JetBrains Mono, monospace">${cr.widthMm}</text>
+          <text x="${cx0 + colW / 2}" y="${subDimY - 3}" text-anchor="middle" fill="#475569" font-size="9.5" font-family="JetBrains Mono, monospace">${cr.widthMm}</text>
         `);
       }
 
-      // Column outer frame
+      // Column outer frame (also draggable to reorder column)
       parts.push(`
         <rect x="${cx0}" y="${yOf(0)}" width="${colW}" height="${boardPxH}"
           fill="${P.cardBg}" stroke="${isColSel ? P.accent : P.cardBorder}" stroke-width="${isColSel ? 2.2 : 1.4}"
-          class="clickable col-bg-rect" data-select-type="column" data-col-index="${colIdx}" />
+          class="clickable col-bg-rect draggable-item" data-select-type="column" data-col-index="${colIdx}" data-drag-col="${colIdx}" />
       `);
 
       // Base Plinth
@@ -148,12 +162,13 @@ window.SGGA = (function () {
 
         const doorPad = 5;
         const hasVbbSpine = opts.showBusbars && cr.vbbSegments.length > 0;
-        const doorW = Math.max(40, colW - doorPad * 2 - (hasVbbSpine ? 18 : 0));
-        const doorX = cx0 + doorPad + (hasVbbSpine ? 18 : 0);
+        const vbbReserve = hasVbbSpine ? 24 : 0;
+        const doorW = Math.max(40, colW - doorPad * 2 - vbbReserve);
+        const doorX = cx0 + doorPad + vbbReserve;
         const doorH = Math.max(24, th - 4);
 
         const fill = isSpacer
-          ? 'url(#ga-hatch-spare)'
+          ? `url(#${px}ga-hatch-spare)`
           : opts.showHeatmap
           ? compartmentHeatFill(totalW, tr.isActive)
           : P.pillBg;

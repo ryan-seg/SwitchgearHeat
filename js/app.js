@@ -11,6 +11,8 @@
 (function () {
   'use strict';
 
+  const APP_VERSION = '2.4.0';
+
   function loadInitialProject() {
     try {
       const hash = window.location.hash || '';
@@ -19,6 +21,7 @@
         const json = decodeURIComponent(escape(atob(b64)));
         const parsed = JSON.parse(json);
         if (parsed && parsed.columns && parsed.mainBusbar && parsed.config) {
+          parsed.deviceLibrary = window.SGState.syncLibraryWithDefaults(parsed.deviceLibrary);
           return parsed;
         }
       }
@@ -33,6 +36,8 @@
   let activeTab = 'sld';
   let gaOptions = { showHeatmap: true, showDimensions: true, showBusbars: true };
   let lastEvalRes = null;
+  let libFilterCategory = 'ALL';
+  let libSearchQuery = '';
 
   // Zoom state per diagram
   let sldZoom = 1.0;
@@ -339,11 +344,13 @@
         return;
       }
 
-      // Draggable Tier or Column
+      // Draggable Tier or Column (prevent native text selection so click-hold-drag is rock-solid)
+      e.preventDefault();
       const startX = e.clientX;
       const startY = e.clientY;
       let isDragging = false;
       let dropTarget = null;
+      const sourceDragEl = dragTierEl || dragColEl;
 
       let dragInfo = null;
       if (dragTierEl) {
@@ -360,16 +367,19 @@
 
       const clearHighlights = () => {
         container.querySelectorAll('.drop-hover').forEach((n) => n.classList.remove('drop-hover'));
-        dropLineEl.classList.remove('active');
+        dropLineEl.classList.remove('active', 'vertical');
+        dropLineEl.style.height = '';
+        dropLineEl.style.width = '';
       };
 
       const onMove = (me) => {
         const dx = me.clientX - startX;
         const dy = me.clientY - startY;
-        if (!isDragging && Math.hypot(dx, dy) > 6) {
+        if (!isDragging && Math.hypot(dx, dy) > 5) {
           isDragging = true;
           dragGhostEl.textContent = dragInfo.label;
           dragGhostEl.classList.add('active');
+          if (sourceDragEl) sourceDragEl.style.opacity = '0.45';
         }
         if (!isDragging) return;
 
@@ -398,6 +408,15 @@
 
         if (dragInfo.kind === 'column') {
           dropTarget = { kind: 'column', toCol: targetColIdx };
+          if (colZone) {
+            const cr = colZone.getBoundingClientRect();
+            const isRight = targetColIdx > dragInfo.fromCol;
+            dropLineEl.classList.add('active', 'vertical');
+            dropLineEl.style.left = `${Math.round(isRight ? cr.right - 2 : cr.left - 2)}px`;
+            dropLineEl.style.top = `${Math.round(cr.top)}px`;
+            dropLineEl.style.height = `${Math.round(cr.height)}px`;
+            dropLineEl.style.width = '4px';
+          }
         } else if (tierHit) {
           const [tc, tt] = tierHit.dataset.dropTier.split(':').map(Number);
           const r = tierHit.getBoundingClientRect();
@@ -405,6 +424,7 @@
           dropTarget = { kind: 'tier', toCol: tc, toIndex: insertAfter ? tt + 1 : tt };
           dropLineEl.style.left = `${Math.round(r.left)}px`;
           dropLineEl.style.width = `${Math.round(r.width)}px`;
+          dropLineEl.style.height = '3px';
           dropLineEl.style.top = `${Math.round(insertAfter ? r.bottom + 2 : r.top - 2)}px`;
           dropLineEl.classList.add('active');
         } else {
@@ -417,6 +437,7 @@
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         dragGhostEl.classList.remove('active');
+        if (sourceDragEl) sourceDragEl.style.opacity = '';
         clearHighlights();
 
         if (!isDragging) {
@@ -1541,22 +1562,46 @@
     });
   }
 
-  // --- TAB 4: Editable Device Library ---
+  // --- TAB 4: Editable Device, Fuse & Starter Library (with Category Filter & Search) ---
   function renderLibraryView() {
     const el = document.getElementById('library-container');
+    const categories = ['ALL', ...Array.from(new Set(project.deviceLibrary.map((t) => t.category)))];
+    const q = libSearchQuery.trim().toLowerCase();
+
+    const filtered = project.deviceLibrary
+      .map((t, idx) => ({ t, idx }))
+      .filter(({ t }) => {
+        if (libFilterCategory !== 'ALL' && t.category !== libFilterCategory) return false;
+        if (q && !`${t.category} ${t.name} ${t.ratedCurrentA} ${t.notes || ''}`.toLowerCase().includes(q)) return false;
+        return true;
+      });
+
     el.innerHTML = `
       <div class="card">
         <h3>
-          Editable IEC Protective Device &amp; Starter Library
-          <button id="lib-add-btn" class="btn btn-sm btn-primary">+ New Custom Device Template</button>
+          Editable IEC Protective Device, Eaton HRC Fuse &amp; Starter Library (${project.deviceLibrary.length} items)
+          <div class="action-row">
+            <button id="lib-sync-btn" class="btn btn-sm btn-secondary" title="Ensure all latest Eaton 2A–1250A HRC fuses & IEC templates are loaded">↻ Sync Default Library</button>
+            <button id="lib-add-btn" class="btn btn-sm btn-primary">+ New Custom Device Template</button>
+          </div>
         </h3>
         <div class="lib-typ-banner">
-          <span><strong>Typical 3-Phase Losses @ Rated Current (In):</strong></span>
-          <span>Eaton HRC Fuses (2A–1250A, DS 10164): 16NHG0B = 3W/link (9W 3P) · 250NHG1B = 19W/link (57W 3P) · 1250NHG4G = 108W/link (324W 3P)</span>
-          <span>ACB 1600A: ~260W + 15W aux</span>
-          <span>MCCB 400A: ~66W</span>
-          <span>DOL 37kW: ~55W + 18W coil</span>
-          <span>VSD: ~2.5–3.5% kW</span>
+          <span><strong>Eaton Bussmann NH gG HRC Fuses (2 A – 1250 A, DS 10164):</strong></span>
+          <span>2NHG000B = 3.9 W/link</span>
+          <span>16NHG0B = 3.0 W/link</span>
+          <span>250NHG1B = 19 W/link</span>
+          <span>400NHG2B = 30 W/link</span>
+          <span>630NHG3B = 47 W/link</span>
+          <span>1250NHG4G = 108 W/link (324 W 3P + base)</span>
+        </div>
+        <div class="lib-filter-bar">
+          <input type="text" id="lib-search" value="${esc(libSearchQuery)}" placeholder="Search part no. or rating (e.g. 1250NHG4G, 16NHG0B, DOL, 400A)…" style="min-width:280px;" />
+          ${categories
+            .map(
+              (cat) =>
+                `<button class="btn btn-sm ${libFilterCategory === cat ? 'btn-primary' : 'btn-secondary'}" data-lib-cat="${esc(cat)}">${esc(cat)}</button>`
+            )
+            .join('')}
         </div>
         <table class="data-table">
           <thead>
@@ -1571,12 +1616,12 @@
             </tr>
           </thead>
           <tbody>
-            ${project.deviceLibrary
+            ${filtered
               .map(
-                (t, idx) => `
+                ({ t, idx }) => `
               <tr>
-                <td><input type="text" data-lib-idx="${idx}" data-lib-field="category" value="${esc(t.category)}" style="width:115px;" /></td>
-                <td><input type="text" data-lib-idx="${idx}" data-lib-field="name" value="${esc(t.name)}" style="width:240px;" /></td>
+                <td><input type="text" data-lib-idx="${idx}" data-lib-field="category" value="${esc(t.category)}" style="width:120px;" /></td>
+                <td><input type="text" data-lib-idx="${idx}" data-lib-field="name" value="${esc(t.name)}" style="width:290px;" /></td>
                 <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedCurrentA" value="${t.ratedCurrentA}" style="width:72px;" /></td>
                 <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedLossW" value="${t.ratedLossW}" style="width:72px;" /></td>
                 <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="fixedLossW" value="${t.fixedLossW || 0}" style="width:65px;" /></td>
@@ -1589,6 +1634,29 @@
         </table>
       </div>
     `;
+
+    document.getElementById('lib-search').addEventListener('input', (e) => {
+      libSearchQuery = e.target.value;
+      renderLibraryView();
+      const s = document.getElementById('lib-search');
+      if (s) {
+        s.focus();
+        s.setSelectionRange(s.value.length, s.value.length);
+      }
+    });
+
+    el.querySelectorAll('[data-lib-cat]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        libFilterCategory = btn.dataset.libCat;
+        renderLibraryView();
+      });
+    });
+
+    document.getElementById('lib-sync-btn').addEventListener('click', () => {
+      pushUndo();
+      project.deviceLibrary = window.SGState.syncLibraryWithDefaults(project.deviceLibrary);
+      renderAll();
+    });
 
     el.querySelectorAll('[data-lib-field]').forEach((inp) => {
       inp.addEventListener('change', () => {
@@ -1964,8 +2032,116 @@
         activeSc.result,
         allScenarios
       );
-      window.print();
+      // Wait two animation frames so both SLD & General Arrangement SVGs finish layout before opening Print dialog
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => window.print());
+      });
     });
+
+    // Privacy & Data Storage Modal
+    document.getElementById('btn-privacy').addEventListener('click', openPrivacyModal);
+    document.getElementById('btn-privacy-footer').addEventListener('click', openPrivacyModal);
+
+    // Background Version Check (detects fresh GitHub/Cloudflare deployments automatically)
+    checkForAppUpdate();
+  }
+
+  function openPrivacyModal() {
+    let overlay = document.getElementById('privacy-modal-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'privacy-modal-overlay';
+      overlay.className = 'modal-overlay';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.classList.remove('open');
+      });
+    }
+
+    overlay.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="Data Privacy, Storage & Security Notice">
+        <div class="modal-header">
+          <div>
+            <span class="pill-badge">Version ${APP_VERSION} · Client-Side Only</span>
+            <h2 class="modal-title">🔒 Data Privacy, Storage &amp; Security Notice</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button id="privacy-close-btn" class="btn btn-sm btn-secondary">✕ Close</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="privacy-callout">
+            <strong>⚠️ Advisory on Sensitive Information:</strong> Do <strong>NOT</strong> enter confidential, security-classified, critical national infrastructure (CNI), defence, or client-restricted site details (such as real site names, confidential tag trees, or proprietary contract numbers). Use anonymised or generic labels (e.g. <code>MSB-A</code>, <code>Pump 1</code>, <code>Area 1</code>) instead.
+          </div>
+          <div class="privacy-list">
+            <div class="privacy-item">
+              <h4>1. Server Storage &amp; Network Transmission: NONE (0 Bytes)</h4>
+              <p>This calculator is 100% static client-side HTML, CSS, and JavaScript. There is no backend database, no user account system, no third-party analytics/trackers, and no external CDN scripts. None of your switchboard parameters, circuit loads, or calculations are ever sent to Cloudflare, GitHub, or any remote server.</p>
+            </div>
+            <div class="privacy-item">
+              <h4>2. How Auto-Save Works (Browser localStorage)</h4>
+              <p>As you edit, your project state and selected colour theme are saved locally inside <strong>your browser's own <code>localStorage</code></strong> on this computer so work is not lost if you refresh. Data remains strictly on your local device unless you export or clear it.</p>
+            </div>
+            <div class="privacy-item">
+              <h4>3. Manual File Exports (JSON / CSV / SVG / Print PDF)</h4>
+              <p>Clicking <strong>Save JSON</strong>, <strong>Export CSV</strong>, <strong>Export SVG</strong>, or <strong>Print / PDF Report</strong> generates files locally in your browser's memory and saves them directly to your computer—nothing is uploaded.</p>
+            </div>
+            <div class="privacy-item">
+              <h4>4. How "Share Link" Works (#data= URL Fragment)</h4>
+              <p>Clicking <strong>Share Link</strong> encodes your project JSON into the browser URL hash (<code>#data=...</code>). Although URL hash fragments are not sent in standard HTTP requests to servers, <strong>anyone who receives that link can decode the project data inside it</strong>. Only share links containing non-sensitive, anonymised board data.</p>
+            </div>
+            <div class="privacy-item">
+              <h4>5. Version Tracking &amp; Updates</h4>
+              <p>When hosted on the web, the app checks <code>version.json</code> (a read-only static file containing only the release number) with cache disabled so you are alerted immediately whenever a newer GitHub/Cloudflare deployment goes live.</p>
+            </div>
+          </div>
+          <div class="action-row" style="margin-top:8px;justify-content:space-between;align-items:center;">
+            <span class="toolbar-hint">Using a shared workstation? Wipe your locally stored project below.</span>
+            <button id="privacy-clear-btn" class="btn btn-sm btn-danger">Clear Browser Saved Data &amp; Reset</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    overlay.classList.add('open');
+    document.getElementById('privacy-close-btn').addEventListener('click', () => overlay.classList.remove('open'));
+    document.getElementById('privacy-clear-btn').addEventListener('click', () => {
+      window.SGState.clearSavedData();
+      window.history.replaceState(null, '', window.location.pathname);
+      project = window.SGState.createDefaultProject();
+      selection = { type: 'mainBusbar' };
+      undoStack.length = 0;
+      applyTheme('dark');
+      overlay.classList.remove('open');
+      renderAll();
+    });
+  }
+
+  function checkForAppUpdate() {
+    if (window.location.protocol === 'file:') return;
+    const statusEl = document.getElementById('update-status');
+    const check = () => {
+      fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data || !data.version || !statusEl) return;
+          if (data.version !== APP_VERSION) {
+            statusEl.textContent = `🔄 New version v${data.version} live — Click to update`;
+            statusEl.classList.add('has-update');
+            statusEl.onclick = () => {
+              const url = new URL(window.location.href);
+              url.searchParams.set('v', data.version);
+              window.location.href = url.toString();
+            };
+          } else {
+            statusEl.textContent = `v${APP_VERSION} · Up to date`;
+            statusEl.classList.remove('has-update');
+          }
+        })
+        .catch(() => {});
+    };
+    check();
+    setInterval(check, 60000);
   }
 
   initControls();

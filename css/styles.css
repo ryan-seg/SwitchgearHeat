@@ -566,6 +566,115 @@ input:focus, select:focus, textarea:focus {
   display: block;
 }
 
+.drop-insert-line.vertical {
+  height: auto;
+  width: 4px;
+}
+
+/* Version Badge & Bottom Privacy Strip */
+.version-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 10px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  vertical-align: middle;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 16px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.footer-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.update-status {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+
+.update-status.has-update {
+  color: #fbbf24;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.lib-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.privacy-callout {
+  padding: 10px 12px;
+  border-radius: 7px;
+  border-left: 3px solid var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--text-0);
+  font-size: 12.5px;
+  margin-bottom: 12px;
+}
+
+.privacy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.privacy-item {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+
+.privacy-item h4 {
+  margin: 0 0 4px 0;
+  font-size: 12.5px;
+  color: var(--accent);
+}
+
+.privacy-item p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-1);
+}
+
 /* Rich Hover Engineering Help Tooltip */
 .help-label {
   cursor: help;

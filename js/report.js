@@ -147,9 +147,9 @@ window.SGReport = (function () {
     const bb = project.mainBusbar;
     const hr = evalRes.hbbRes;
     const t = evalRes.totals;
-    // Always render print diagrams in crisp light CAD palette so they print cleanly on white paper
-    const sldSvg = window.SGSLD.renderSLD(project, evalRes, null, 1.0, 'light');
-    const gaSvg = window.SGGA.renderGA(project, evalRes, null, { showHeatmap: true, showDimensions: true, showBusbars: true }, 1.0, 'light');
+    // Use unique 'print-' ID prefix so SVG patterns/markers NEVER collide with hidden interactive SVGs!
+    const sldSvg = window.SGSLD.renderSLD(project, evalRes, null, 1.0, 'light', 'print-');
+    const gaSvg = window.SGGA.renderGA(project, evalRes, null, { showHeatmap: true, showDimensions: true, showBusbars: true }, 1.0, 'light', 'print-');
 
     return `
       <div class="print-header">

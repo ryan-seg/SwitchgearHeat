@@ -590,21 +590,30 @@ window.SGState = (function () {
     return p;
   }
 
+  function syncLibraryWithDefaults(deviceLibrary) {
+    if (!Array.isArray(deviceLibrary)) {
+      return window.SGCatalog.DEFAULT_DEVICE_TEMPLATES.map((t) => window.SGCatalog.cloneTemplate(t));
+    }
+    const byId = new Map(deviceLibrary.map((t) => [t.id, t]));
+    window.SGCatalog.DEFAULT_DEVICE_TEMPLATES.forEach((tpl) => {
+      const existing = byId.get(tpl.id);
+      if (!existing) {
+        deviceLibrary.push(window.SGCatalog.cloneTemplate(tpl));
+      } else if ((tpl.id === 'fuse-250' || tpl.id === 'fuse-400') && existing.category === 'Fuse-Switch') {
+        // Upgrade legacy generic fuse templates to Eaton Bussmann NH gG specs
+        Object.assign(existing, window.SGCatalog.cloneTemplate(tpl));
+      }
+    });
+    return deviceLibrary;
+  }
+
   function loadProject() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.columns && parsed.mainBusbar && parsed.config) {
-          // Ensure newly added built-in templates (e.g. Spare Space / Placeholder) exist in saved library
-          if (Array.isArray(parsed.deviceLibrary)) {
-            const existingIds = new Set(parsed.deviceLibrary.map((t) => t.id));
-            window.SGCatalog.DEFAULT_DEVICE_TEMPLATES.forEach((tpl) => {
-              if (!existingIds.has(tpl.id)) {
-                parsed.deviceLibrary.push(window.SGCatalog.cloneTemplate(tpl));
-              }
-            });
-          }
+          parsed.deviceLibrary = syncLibraryWithDefaults(parsed.deviceLibrary);
           return parsed;
         }
       }
@@ -612,6 +621,13 @@ window.SGState = (function () {
       console.warn('Could not load saved project from localStorage:', e);
     }
     return createDefaultProject();
+  }
+
+  function clearSavedData() {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('sg_heat_calc_theme_v1');
+    } catch (e) {}
   }
 
   function saveProject(project) {
@@ -628,7 +644,9 @@ window.SGState = (function () {
     createDefaultProject,
     createDualIncomerProject,
     createBlankProject,
+    syncLibraryWithDefaults,
     loadProject,
     saveProject,
+    clearSavedData,
   };
 })();

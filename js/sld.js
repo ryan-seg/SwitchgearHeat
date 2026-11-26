@@ -131,8 +131,10 @@ window.SGSLD = (function () {
     };
   }
 
-  function renderSLD(project, evalRes, selection, zoom, themeOverride) {
+  function renderSLD(project, evalRes, selection, zoom, themeOverride, idPrefix) {
     const P = getPalette(themeOverride);
+    const px = idPrefix || '';
+    const isPrint = Boolean(px);
     const z = zoom || 1.0;
     const cols = evalRes.columns;
     const colSpacing = 248;
@@ -148,25 +150,29 @@ window.SGSLD = (function () {
 
     const tierStepY = 86;
     const svgWidth = Math.max(920, padLeft + cols.length * colSpacing + padRight);
-    const svgHeight = Math.max(540, busY + 100 + maxTiers * tierStepY + 86);
+    const svgHeight = Math.max(560, busY + 124 + maxTiers * tierStepY + 86);
     const colCenters = cols.map((_, idx) => padLeft + idx * colSpacing + colSpacing / 2);
+
+    const sizeAttrs = isPrint
+      ? `width="100%" preserveAspectRatio="xMidYMid meet"`
+      : `width="${Math.round(svgWidth * z)}" height="${Math.round(svgHeight * z)}" data-base-width="${svgWidth}" data-base-height="${svgHeight}"`;
 
     const parts = [];
     parts.push(
-      `<svg id="sld-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" width="${Math.round(svgWidth * z)}" height="${Math.round(svgHeight * z)}" data-base-width="${svgWidth}" data-base-height="${svgHeight}" class="diagram-svg">`
+      `<svg id="${px}sld-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgWidth} ${svgHeight}" ${sizeAttrs} class="diagram-svg">`
     );
 
     parts.push(`
       <defs>
-        <pattern id="sld-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+        <pattern id="${px}sld-grid" width="24" height="24" patternUnits="userSpaceOnUse">
           <path d="M 24 0 L 0 0 0 24" fill="none" stroke="${P.grid}" stroke-width="0.6" />
         </pattern>
-        <pattern id="hatch-spare" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <pattern id="${px}hatch-spare" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
           <line x1="0" y1="0" x2="0" y2="10" stroke="${P.hatch}" stroke-width="2" />
         </pattern>
       </defs>
       <rect x="0" y="0" width="${svgWidth}" height="${svgHeight}" fill="${P.bg}" class="pan-bg" />
-      <rect x="0" y="0" width="${svgWidth}" height="${svgHeight}" fill="url(#sld-grid)" class="pan-bg" />
+      <rect x="0" y="0" width="${svgWidth}" height="${svgHeight}" fill="url(#${px}sld-grid)" class="pan-bg" />
     `);
 
     // Title Block
@@ -332,8 +338,8 @@ window.SGSLD = (function () {
         .filter((item) => item.tr.tier.role !== 'incomer' && item.tr.tier.role !== 'bus_coupler');
 
       const dropperX = cx - 76;
-      const firstTierY = busY + 64;
-      const lastTierY = belowTiers.length > 0 ? firstTierY + (belowTiers.length - 1) * tierStepY : busY + 64;
+      const firstTierY = busY + 86;
+      const lastTierY = belowTiers.length > 0 ? firstTierY + (belowTiers.length - 1) * tierStepY : busY + 86;
 
       // Draw Vertical Dropper if any electrical loads exist in this column
       const hasElectricalDropper = belowTiers.some((it) => it.tr.tier.role === 'feeder' || it.tr.tier.role === 'interconnector');
@@ -370,7 +376,7 @@ window.SGSLD = (function () {
           parts.push(`
             <g class="clickable draggable-item" data-select-type="tier" data-col-index="${colIdx}" data-tier-index="${origIdx}" data-drag-tier="${colIdx}:${origIdx}" data-drop-tier="${colIdx}:${origIdx}">
               <rect x="${dropperX + 18}" y="${ty - 28}" width="168" height="56" rx="6"
-                fill="url(#hatch-spare)" stroke="${isSel ? P.accent : P.cardBorder}" stroke-width="${isSel ? 2 : 1.2}" stroke-dasharray="5 3" />
+                fill="url(#${px}hatch-spare)" stroke="${isSel ? P.accent : P.cardBorder}" stroke-width="${isSel ? 2 : 1.2}" stroke-dasharray="5 3" />
               <rect x="${dropperX + 24}" y="${ty - 21}" width="136" height="42" rx="4" fill="${P.spacerLabelBg}" />
               <text x="${dropperX + 30}" y="${ty - 6}" fill="${P.textMain}" font-size="10.2" font-weight="700" font-family="Inter, sans-serif">⋮⋮ ${esc(tr.tier.tag)}</text>
               <text x="${dropperX + 30}" y="${ty + 7}" fill="${P.textMuted}" font-size="8.8" font-family="Inter, sans-serif">${esc(truncate(tr.tier.category, 20))} · ${tr.tier.heightMm}mm</text>
