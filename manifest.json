@@ -1,0 +1,16 @@
+{
+  "name": "Switchgear Thermal & Heat Loss Calculator",
+  "short_name": "SG Heat Calc",
+  "description": "IEC 60439 / 61439 LV switchgear heat output calculator with interactive SLD, General Arrangement, and Joule busbar physics.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#060b16",
+  "theme_color": "#0b1120",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

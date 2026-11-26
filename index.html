@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="IEC 60439 / 61439 LV Switchgear Thermal & Heat Loss Calculator with Joule busbar physics, interactive SLD, General Arrangement, and step-by-step calculation breakdown." />
+  <meta name="theme-color" content="#0b1120" />
+  <title>Switchgear Heat Loss Calculator — IEC 60439 / 61439</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Top Application Bar -->
+    <header class="topbar">
+      <div class="topbar-brand">
+        <div class="brand-badge">⚡</div>
+        <div>
+          <h1 class="brand-title">Switchgear Thermal &amp; Heat Loss Calculator</h1>
+          <div class="brand-sub">IEC 60439 / 61439 · Joule Busbar Physics · SLD &amp; GA Take-off Modelling</div>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <select id="preset-select" class="input-compact" title="Load switchboard preset">
+          <option value="">Load Preset…</option>
+          <option value="default">MSB-A Demo (2×75×6mm + Interconnector)</option>
+          <option value="dual">Dual Incomer + Bus Coupler + Interconnector</option>
+          <option value="blank">Blank Starter Board</option>
+        </select>
+        <button id="btn-save-json" class="btn btn-secondary" title="Save project as JSON">Save JSON</button>
+        <button id="btn-load-json" class="btn btn-secondary" title="Load project from JSON">Load JSON</button>
+        <input id="file-load-json" type="file" accept=".json" style="display:none" />
+        <button id="btn-share-link" class="btn btn-secondary" title="Copy shareable web URL containing this switchboard">Share Link</button>
+        <button id="btn-export-csv" class="btn btn-secondary" title="Export full schedules to CSV (Excel)">Export CSV</button>
+        <button id="btn-print-report" class="btn btn-primary" title="Print or Save Engineering Report as PDF">Print / PDF Report</button>
+      </div>
+    </header>
+
+    <!-- Scenario & KPI Summary Strip -->
+    <section class="summary-strip">
+      <div class="scenario-bar" id="scenario-bar">
+        <!-- Populated dynamically with 4 scenario pills + live kW -->
+      </div>
+      <div class="kpi-grid" id="kpi-grid">
+        <!-- Populated dynamically with live KPI cards -->
+      </div>
+    </section>
+
+    <!-- Main Workspace: Left Tabs + Stage | Right Inspector -->
+    <main class="workspace">
+      <section class="main-stage">
+        <div class="stage-tabs">
+          <button class="tab-btn active" data-tab="sld">1. Single Line Diagram (SLD)</button>
+          <button class="tab-btn" data-tab="ga">2. General Arrangement (GA)</button>
+          <button class="tab-btn" data-tab="schedules">3. Heat Loss Schedules &amp; Audit</button>
+          <button class="tab-btn" data-tab="library">4. Device &amp; Starter Library</button>
+          <button class="tab-btn" data-tab="config">5. Board &amp; Standards Config</button>
+        </div>
+
+        <!-- TAB 1: SLD -->
+        <div id="tab-sld" class="tab-panel active">
+          <div class="canvas-toolbar">
+            <div class="toolbar-group">
+              <button id="sld-add-col" class="btn btn-sm btn-primary">+ Feeder Col</button>
+              <button id="sld-add-inc" class="btn btn-sm btn-secondary">+ Incomer</button>
+              <button id="sld-add-coupler" class="btn btn-sm btn-secondary">+ Bus Coupler</button>
+              <button id="sld-add-interconn" class="btn btn-sm btn-secondary">+ Interconnector</button>
+              <button id="sld-select-hbb" class="btn btn-sm btn-secondary">Edit Main Busbar</button>
+              <button id="sld-export-svg" class="btn btn-sm btn-secondary">Export SLD SVG</button>
+            </div>
+            <div class="toolbar-hint">Click any busbar, column, incomer, coupler, or feeder on the diagram to edit live parameters.</div>
+          </div>
+          <div id="sld-container" class="diagram-container"></div>
+        </div>
+
+        <!-- TAB 2: GA -->
+        <div id="tab-ga" class="tab-panel">
+          <div class="canvas-toolbar">
+            <div class="toolbar-group">
+              <label class="toggle-chip"><input type="checkbox" id="ga-opt-heatmap" checked /> Thermal Heatmap</label>
+              <label class="toggle-chip"><input type="checkbox" id="ga-opt-dims" checked /> Dimensions &amp; Take-off EL</label>
+              <label class="toggle-chip"><input type="checkbox" id="ga-opt-busbars" checked /> Busbar Paths (W/m)</label>
+              <button id="ga-export-svg" class="btn btn-sm btn-secondary">Export GA SVG</button>
+            </div>
+            <div class="toolbar-hint">Auto-generated to scale from column widths &amp; tier heights — drives all busbar lengths.</div>
+          </div>
+          <div id="ga-container" class="diagram-container"></div>
+        </div>
+
+        <!-- TAB 3: SCHEDULES & AUDIT -->
+        <div id="tab-schedules" class="tab-panel scrollable-panel">
+          <div id="schedules-container"></div>
+        </div>
+
+        <!-- TAB 4: DEVICE LIBRARY -->
+        <div id="tab-library" class="tab-panel scrollable-panel">
+          <div id="library-container"></div>
+        </div>
+
+        <!-- TAB 5: BOARD CONFIG -->
+        <div id="tab-config" class="tab-panel scrollable-panel">
+          <div id="config-container"></div>
+        </div>
+      </section>
+
+      <!-- Right Context Inspector -->
+      <aside class="inspector-panel">
+        <div class="inspector-header">
+          <h2 id="inspector-title">Inspector</h2>
+          <span id="inspector-badge" class="pill-badge">Selection</span>
+        </div>
+        <div id="inspector-body" class="inspector-body">
+          <!-- Context-sensitive editor rendered by app.js -->
+        </div>
+      </aside>
+    </main>
+
+    <!-- Print-Only Comprehensive Engineering Report Container -->
+    <div id="print-report" class="print-only"></div>
+  </div>
+
+  <script src="./js/physics.js"></script>
+  <script src="./js/catalog.js"></script>
+  <script src="./js/state.js"></script>
+  <script src="./js/sld.js"></script>
+  <script src="./js/ga.js"></script>
+  <script src="./js/explain.js"></script>
+  <script src="./js/report.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
