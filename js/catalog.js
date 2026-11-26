@@ -273,48 +273,65 @@ window.SGCatalog = (function () {
       notes: 'Generic 800A frame MCCB (~55W/pole at In)',
     },
 
-    // --- MCB & Fuse-Switch ---
+    // --- MCB ---
     {
       id: 'mcb-63',
       category: 'MCB',
-      name: 'MCB 63A 3P',
+      name: 'MCB 63A 3P (Miniature Circuit Breaker)',
       role: 'feeder',
       ratedCurrentA: 63,
       ratedLossW: 16,
       fixedLossW: 0,
       defaultHeightMm: 150,
-      notes: 'Generic 63A 3P MCB (~5.3W/pole)',
+      notes: 'Generic 63A 3-Pole Miniature Circuit Breaker (~5.3W/pole)',
     },
-    {
-      id: 'fuse-250',
-      category: 'Fuse-Switch',
-      name: 'Fuse-Switch Disconnector 250A (gG)',
-      role: 'feeder',
-      ratedCurrentA: 250,
-      ratedLossW: 72,
-      fixedLossW: 0,
-      defaultHeightMm: 300,
-      notes: 'Includes 3x NH1 250A gG fuse links (~18W each) + switch contacts (~6W each)',
-      subComponents: [
-        { name: 'Fuse-Switch Contacts (3P)', ratedCurrentA: 250, ratedLossW: 18, fixedLossW: 0 },
-        { name: 'HRC Fuse Links 3×250A gG', ratedCurrentA: 250, ratedLossW: 54, fixedLossW: 0 },
-      ],
-    },
-    {
-      id: 'fuse-400',
-      category: 'Fuse-Switch',
-      name: 'Fuse-Switch Disconnector 400A (gG)',
-      role: 'feeder',
-      ratedCurrentA: 400,
-      ratedLossW: 115,
-      fixedLossW: 0,
-      defaultHeightMm: 350,
-      notes: 'Includes 3x NH2 400A gG fuse links + switch contacts',
-      subComponents: [
-        { name: 'Fuse-Switch Contacts (3P)', ratedCurrentA: 400, ratedLossW: 25, fixedLossW: 0 },
-        { name: 'HRC Fuse Links 3×400A gG', ratedCurrentA: 400, ratedLossW: 90, fixedLossW: 0 },
-      ],
-    },
+
+    // --- Eaton Bussmann NH gG HRC Fuse Links (2A to 1250A, Data Sheet 10164, 500V AC) ---
+    ...[
+      { id: 'hrc-2',   part: '2NHG000B',   size: 'NH000', amps: 2,    wLink: 3.9,  wBase: 0.6, h: 160 },
+      { id: 'hrc-4',   part: '4NHG000B',   size: 'NH000', amps: 4,    wLink: 1.8,  wBase: 0.6, h: 160 },
+      { id: 'hrc-6',   part: '6NHG000B',   size: 'NH000', amps: 6,    wLink: 2.0,  wBase: 0.9, h: 160 },
+      { id: 'hrc-10',  part: '10NHG000B',  size: 'NH000', amps: 10,   wLink: 1.5,  wBase: 1.2, h: 160 },
+      { id: 'hrc-16-000', part: '16NHG000B', size: 'NH000', amps: 16, wLink: 2.3,  wBase: 1.5, h: 160 },
+      { id: 'hrc-16',  part: '16NHG0B',    size: 'NH0',   amps: 16,   wLink: 3.0,  wBase: 1.5, h: 180 },
+      { id: 'hrc-20',  part: '20NHG000B',  size: 'NH000', amps: 20,   wLink: 2.6,  wBase: 1.8, h: 160 },
+      { id: 'hrc-25',  part: '25NHG000B',  size: 'NH000', amps: 25,   wLink: 3.1,  wBase: 2.1, h: 160 },
+      { id: 'hrc-32',  part: '32NHG000B',  size: 'NH000', amps: 32,   wLink: 3.4,  wBase: 2.4, h: 160 },
+      { id: 'hrc-40',  part: '40NHG000B',  size: 'NH000', amps: 40,   wLink: 3.9,  wBase: 3.0, h: 180 },
+      { id: 'hrc-50',  part: '50NHG000B',  size: 'NH000', amps: 50,   wLink: 4.2,  wBase: 3.6, h: 180 },
+      { id: 'hrc-63',  part: '63NHG000B',  size: 'NH000', amps: 63,   wLink: 4.6,  wBase: 4.5, h: 180 },
+      { id: 'hrc-80',  part: '80NHG000B',  size: 'NH000', amps: 80,   wLink: 6.1,  wBase: 6.0, h: 200 },
+      { id: 'hrc-100', part: '100NHG000B', size: 'NH000', amps: 100,  wLink: 7.4,  wBase: 7.5, h: 200 },
+      { id: 'hrc-125', part: '125NHG00B',  size: 'NH00',  amps: 125,  wLink: 8.8,  wBase: 9.0, h: 220 },
+      { id: 'hrc-160', part: '160NHG00B',  size: 'NH00',  amps: 160,  wLink: 10.0, wBase: 12.0, h: 240 },
+      { id: 'hrc-200', part: '200NHG1B',   size: 'NH1',   amps: 200,  wLink: 15.5, wBase: 15.0, h: 280 },
+      { id: 'fuse-250', part: '250NHG1B',  size: 'NH1',   amps: 250,  wLink: 19.0, wBase: 18.0, h: 300 },
+      { id: 'hrc-315', part: '315NHG2B',   size: 'NH2',   amps: 315,  wLink: 24.0, wBase: 21.0, h: 320 },
+      { id: 'fuse-400', part: '400NHG2B',  size: 'NH2',   amps: 400,  wLink: 30.0, wBase: 25.0, h: 350 },
+      { id: 'hrc-500', part: '500NHG3B',   size: 'NH3',   amps: 500,  wLink: 38.0, wBase: 30.0, h: 400 },
+      { id: 'hrc-630', part: '630NHG3B',   size: 'NH3',   amps: 630,  wLink: 47.0, wBase: 36.0, h: 420 },
+      { id: 'hrc-800', part: '800NHG4G',   size: 'NH4',   amps: 800,  wLink: 68.0, wBase: 48.0, h: 500 },
+      { id: 'hrc-1000', part: '1000NHG4G', size: 'NH4',   amps: 1000, wLink: 80.0, wBase: 60.0, h: 550 },
+      { id: 'hrc-1250', part: '1250NHG4G', size: 'NH4',   amps: 1250, wLink: 108.0, wBase: 75.0, h: 600 },
+    ].map((f) => {
+      const links3P = Math.round(f.wLink * 3 * 10) / 10;
+      const totalPn = Math.round((links3P + f.wBase) * 10) / 10;
+      return {
+        id: f.id,
+        category: 'HRC Fuse-Switch',
+        name: `Eaton ${f.part} — ${f.amps}A ${f.size} gG HRC (${f.wLink}W/link)`,
+        role: 'feeder',
+        ratedCurrentA: f.amps,
+        ratedLossW: totalPn,
+        fixedLossW: 0,
+        defaultHeightMm: f.h,
+        notes: `Eaton Bussmann Data Sheet 10164 (500V AC gG): 3×${f.part} (${f.wLink}W/link = ${links3P}W) + Fuse-Switch/Base contacts (${f.wBase}W)`,
+        subComponents: [
+          { name: `3× Eaton ${f.part} HRC Links (${f.wLink}W ea)`, ratedCurrentA: f.amps, ratedLossW: links3P, fixedLossW: 0 },
+          { name: `${f.size} Fuse-Switch / Base Contacts (3P)`, ratedCurrentA: f.amps, ratedLossW: f.wBase, fixedLossW: 0 },
+        ],
+      };
+    }),
 
     // --- DOL Starters ---
     {
@@ -515,6 +532,41 @@ window.SGCatalog = (function () {
         { name: 'Bus Coupler ACB Poles', ratedCurrentA: 2500, ratedLossW: 440, fixedLossW: 0 },
         { name: 'Interlock & Metering Aux', ratedCurrentA: 2500, ratedLossW: 0, fixedLossW: 15 },
       ],
+    },
+
+    // --- Spare Spaces & Placeholders ---
+    {
+      id: 'spare-space',
+      category: 'Spare Space',
+      name: 'Spare Space / Blank Reserve Bay (0 W)',
+      role: 'spacer',
+      ratedCurrentA: 1,
+      ratedLossW: 0,
+      fixedLossW: 0,
+      defaultHeightMm: 250,
+      notes: 'Physical blank/equipped spare space occupying cubicle height on GA (0 A, 0 W)',
+    },
+    {
+      id: 'placeholder-bay',
+      category: 'Placeholder',
+      name: 'Equipment Placeholder Bay (0 W)',
+      role: 'spacer',
+      ratedCurrentA: 1,
+      ratedLossW: 0,
+      fixedLossW: 0,
+      defaultHeightMm: 300,
+      notes: 'Reserves physical space on GA for undefined future equipment or marshalling',
+    },
+    {
+      id: 'aux-chamber',
+      category: 'Chamber / Aux',
+      name: 'Metering / Marshalling Chamber (15 W aux)',
+      role: 'spacer',
+      ratedCurrentA: 1,
+      ratedLossW: 0,
+      fixedLossW: 15,
+      defaultHeightMm: 300,
+      notes: 'Control, metering, or cable marshalling compartment with small fixed auxiliary heat',
     },
   ];
 

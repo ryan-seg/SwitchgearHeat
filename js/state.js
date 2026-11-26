@@ -596,6 +596,15 @@ window.SGState = (function () {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.columns && parsed.mainBusbar && parsed.config) {
+          // Ensure newly added built-in templates (e.g. Spare Space / Placeholder) exist in saved library
+          if (Array.isArray(parsed.deviceLibrary)) {
+            const existingIds = new Set(parsed.deviceLibrary.map((t) => t.id));
+            window.SGCatalog.DEFAULT_DEVICE_TEMPLATES.forEach((tpl) => {
+              if (!existingIds.has(tpl.id)) {
+                parsed.deviceLibrary.push(window.SGCatalog.cloneTemplate(tpl));
+              }
+            });
+          }
           return parsed;
         }
       }

@@ -1,8 +1,11 @@
 /**
  * Main Application Controller
- * Binds UI interactions, live Inspector panels with typical-value hints,
- * click-to-analyse calculation breakdowns (SGExplain), Schedules, Device Library,
- * Config, URL sharing, and Exports.
+ * Features:
+ * - Interactive SLD & GA with smooth vector Zoom (40%–250%), Fit, Ctrl+Wheel & Pan
+ * - Pointer-based Drag-and-Drop to move/reorder tiers across columns & reorder columns
+ * - Spare Spaces & Placeholders + One-click removal + Undo stack (Ctrl+Z)
+ * - Rich Hover Help Tooltips (SGHelp) on every single entry label
+ * - Click-to-Analyse Step-by-Step Calculation Breakdowns (SGExplain) on every calculated figure
  */
 
 (function () {
@@ -26,10 +29,44 @@
   }
 
   let project = loadInitialProject();
-  let selection = { type: 'mainBusbar' }; // { type: 'mainBusbar' } | { type: 'column', colIndex } | { type: 'tier', colIndex, tierIndex }
+  let selection = { type: 'mainBusbar' };
   let activeTab = 'sld';
   let gaOptions = { showHeatmap: true, showDimensions: true, showBusbars: true };
   let lastEvalRes = null;
+
+  // Zoom state per diagram
+  let sldZoom = 1.0;
+  let gaZoom = 1.0;
+
+  // Undo history stack (stores JSON snapshots)
+  const undoStack = [];
+  const MAX_UNDO = 40;
+
+  function pushUndo() {
+    undoStack.push(JSON.stringify(project));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    updateUndoBtn();
+  }
+
+  function performUndo() {
+    if (undoStack.length === 0) return;
+    try {
+      project = JSON.parse(undoStack.pop());
+      selection = { type: 'mainBusbar' };
+      updateUndoBtn();
+      renderAll();
+    } catch (e) {
+      console.warn('Undo failed:', e);
+    }
+  }
+
+  function updateUndoBtn() {
+    const btn = document.getElementById('btn-undo');
+    if (btn) {
+      btn.disabled = undoStack.length === 0;
+      btn.textContent = undoStack.length > 0 ? `↶ Undo (${undoStack.length})` : '↶ Undo';
+    }
+  }
 
   function esc(str) {
     return String(str == null ? '' : str)
@@ -39,9 +76,20 @@
       .replace(/"/g, '&quot;');
   }
 
+  // Helper to create hover-documented labels effortlessly
+  function lbl(text, helpKey) {
+    if (!helpKey) return `<label>${esc(text)}</label>`;
+    return `<label class="help-label" data-help="${esc(helpKey)}" tabindex="0">${esc(text)}</label>`;
+  }
+
   function openExplain(key, ctx) {
     if (!lastEvalRes || !window.SGExplain) return;
-    window.SGExplain.openModal(key, ctx || {}, project, lastEvalRes);
+    window.SGExplain.openModal(key, ctx || {}, project, lastEvalRes, (applyFn) => {
+      pushUndo();
+      if (typeof applyFn === 'function') applyFn();
+      renderAll();
+      return lastEvalRes;
+    });
   }
 
   function renderAll(skipInspectorRebuild) {
@@ -57,8 +105,9 @@
     renderGAView(evalRes);
     if (activeTab === 'schedules') renderSchedulesView(evalRes, allScenarios);
     if (activeTab === 'library') renderLibraryView();
-    if (activeTab === 'config') renderConfigView(evalRes);
+    if (activeTab === 'config') renderConfigView();
     if (!skipInspectorRebuild) renderInspector(evalRes);
+    updateUndoBtn();
   }
 
   // --- Scenario Pills ---
@@ -77,7 +126,7 @@
           `;
         })
         .join('') +
-      `<span class="toolbar-hint" style="margin-left:auto;">Tip: Click any KPI card or calculated figure to inspect its worked formula &amp; commentary.</span>`;
+      `<span class="toolbar-hint" style="margin-left:auto;">Hover any <b>label ?</b> for plain-English help · Drag components to move · Click any calculated value to analyse.</span>`;
 
     bar.querySelectorAll('.scenario-pill').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -87,7 +136,7 @@
     });
   }
 
-  // --- KPI Cards (All Clickable to Analyse) ---
+  // --- KPI Cards ---
   function renderKPIs(evalRes) {
     const t = evalRes.totals;
     const totalW = Math.max(0.001, t.grandTotalW);
@@ -133,44 +182,116 @@
     });
   }
 
-  // --- SLD View ---
+  // --- Zoom Helpers ---
+  function setZoom(which, newZoom) {
+    const clamped = Math.min(2.5, Math.max(0.4, Math.round(newZoom * 20) / 20));
+    if (which === 'sld') {
+      sldZoom = clamped;
+      document.getElementById('sld-zoom-pct').textContent = Math.round(sldZoom * 100) + '%';
+      applySvgZoom('sld-svg', sldZoom);
+    } else {
+      gaZoom = clamped;
+      document.getElementById('ga-zoom-pct').textContent = Math.round(gaZoom * 100) + '%';
+      applySvgZoom('ga-svg', gaZoom);
+    }
+  }
+
+  function applySvgZoom(svgId, z) {
+    const svg = document.getElementById(svgId);
+    if (!svg) return;
+    const bw = Number(svg.dataset.baseWidth) || 960;
+    const bh = Number(svg.dataset.baseHeight) || 560;
+    svg.setAttribute('width', Math.round(bw * z));
+    svg.setAttribute('height', Math.round(bh * z));
+  }
+
+  function fitZoom(which) {
+    const container = document.getElementById(which === 'sld' ? 'sld-container' : 'ga-container');
+    const svg = document.getElementById(which === 'sld' ? 'sld-svg' : 'ga-svg');
+    if (!container || !svg) return;
+    const bw = Number(svg.dataset.baseWidth) || 960;
+    const bh = Number(svg.dataset.baseHeight) || 560;
+    const availW = Math.max(300, container.clientWidth - 28);
+    const availH = Math.max(250, container.clientHeight - 28);
+    const z = Math.min(availW / bw, availH / bh, 1.5);
+    setZoom(which, z);
+  }
+
+  // --- SLD & GA Views ---
   function renderSLDView(evalRes) {
     const container = document.getElementById('sld-container');
-    container.innerHTML = window.SGSLD.renderSLD(project, evalRes, selection);
+    container.innerHTML = window.SGSLD.renderSLD(project, evalRes, selection, sldZoom);
+    document.getElementById('sld-zoom-pct').textContent = Math.round(sldZoom * 100) + '%';
     bindDiagramEvents(container);
   }
 
-  // --- GA View ---
   function renderGAView(evalRes) {
     const container = document.getElementById('ga-container');
-    container.innerHTML = window.SGGA.renderGA(project, evalRes, selection, gaOptions);
+    container.innerHTML = window.SGGA.renderGA(project, evalRes, selection, gaOptions, gaZoom);
+    document.getElementById('ga-zoom-pct').textContent = Math.round(gaZoom * 100) + '%';
     bindDiagramEvents(container);
+  }
+
+  // --- Floating Drag Ghost & Drop Line ---
+  let dragGhostEl = null;
+  let dropLineEl = null;
+
+  function ensureDragOverlays() {
+    if (!dragGhostEl) {
+      dragGhostEl = document.createElement('div');
+      dragGhostEl.className = 'drag-ghost';
+      document.body.appendChild(dragGhostEl);
+    }
+    if (!dropLineEl) {
+      dropLineEl = document.createElement('div');
+      dropLineEl.className = 'drop-insert-line';
+      document.body.appendChild(dropLineEl);
+    }
   }
 
   function bindDiagramEvents(container) {
-    container.querySelectorAll('[data-select-type]').forEach((el) => {
+    ensureDragOverlays();
+
+    // 1. One-click Quick Delete buttons (stop propagation so they don't select or drag)
+    container.querySelectorAll('[data-quick-del-tier]').forEach((el) => {
+      el.addEventListener('pointerdown', (e) => e.stopPropagation());
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        const type = el.dataset.selectType;
-        if (type === 'mainBusbar') {
-          selection = { type: 'mainBusbar' };
-        } else if (type === 'column') {
-          selection = { type: 'column', colIndex: Number(el.dataset.colIndex) };
-        } else if (type === 'tier') {
-          selection = {
-            type: 'tier',
-            colIndex: Number(el.dataset.colIndex),
-            tierIndex: Number(el.dataset.tierIndex),
-          };
-        }
+        const [cIdx, tIdx] = el.dataset.quickDelTier.split(':').map(Number);
+        const col = project.columns[cIdx];
+        if (!col || !col.tiers[tIdx]) return;
+        pushUndo();
+        col.tiers.splice(tIdx, 1);
+        selection = { type: 'column', colIndex: cIdx };
         renderAll();
       });
     });
 
+    container.querySelectorAll('[data-quick-del-col]').forEach((el) => {
+      el.addEventListener('pointerdown', (e) => e.stopPropagation());
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cIdx = Number(el.dataset.quickDelCol);
+        if (project.columns.length <= 1) return;
+        pushUndo();
+        project.columns.splice(cIdx, 1);
+        selection = { type: 'mainBusbar' };
+        renderAll();
+      });
+    });
+
+    // 2. Quick-Add Actions
     container.querySelectorAll('[data-action="add-tier"]').forEach((el) => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
         addTierToColumn(Number(el.dataset.colIndex), 'dol-22kw');
+      });
+    });
+
+    container.querySelectorAll('[data-action="add-spare"]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        addTierToColumn(Number(el.dataset.colIndex), 'spare-space');
       });
     });
 
@@ -180,15 +301,201 @@
         addNewColumn('feeders');
       });
     });
+
+    // 3. Pointer Drag-and-Drop (Tiers & Columns) + Click-to-Select + Canvas Pan
+    container.onpointerdown = (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('[data-quick-del-tier], [data-quick-del-col], [data-action]')) return;
+
+      const dragTierEl = e.target.closest('[data-drag-tier]');
+      const dragColEl = !dragTierEl ? e.target.closest('[data-drag-col]') : null;
+      const selectEl = e.target.closest('[data-select-type]');
+
+      // Background Pan
+      if (!dragTierEl && !dragColEl && !selectEl) {
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startScrollL = container.scrollLeft;
+        const startScrollT = container.scrollTop;
+        container.classList.add('panning');
+
+        const onMovePan = (me) => {
+          container.scrollLeft = startScrollL - (me.clientX - startX);
+          container.scrollTop = startScrollT - (me.clientY - startY);
+        };
+        const onUpPan = () => {
+          container.classList.remove('panning');
+          window.removeEventListener('pointermove', onMovePan);
+          window.removeEventListener('pointerup', onUpPan);
+        };
+        window.addEventListener('pointermove', onMovePan);
+        window.addEventListener('pointerup', onUpPan);
+        return;
+      }
+
+      // Click-only non-draggable elements (e.g. Main Busbar)
+      if (!dragTierEl && !dragColEl) {
+        if (selectEl) handleSelectElement(selectEl);
+        return;
+      }
+
+      // Draggable Tier or Column
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let isDragging = false;
+      let dropTarget = null;
+
+      let dragInfo = null;
+      if (dragTierEl) {
+        const [cIdx, tIdx] = dragTierEl.dataset.dragTier.split(':').map(Number);
+        const tierObj = project.columns[cIdx] && project.columns[cIdx].tiers[tIdx];
+        if (!tierObj) return;
+        dragInfo = { kind: 'tier', fromCol: cIdx, fromTier: tIdx, label: `Moving ${tierObj.tag} (${tierObj.category})` };
+      } else if (dragColEl) {
+        const cIdx = Number(dragColEl.dataset.dragCol);
+        const colObj = project.columns[cIdx];
+        if (!colObj) return;
+        dragInfo = { kind: 'column', fromCol: cIdx, label: `Moving Column: ${colObj.name}` };
+      }
+
+      const clearHighlights = () => {
+        container.querySelectorAll('.drop-hover').forEach((n) => n.classList.remove('drop-hover'));
+        dropLineEl.classList.remove('active');
+      };
+
+      const onMove = (me) => {
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
+        if (!isDragging && Math.hypot(dx, dy) > 6) {
+          isDragging = true;
+          dragGhostEl.textContent = dragInfo.label;
+          dragGhostEl.classList.add('active');
+        }
+        if (!isDragging) return;
+
+        dragGhostEl.style.left = `${me.clientX}px`;
+        dragGhostEl.style.top = `${me.clientY}px`;
+        clearHighlights();
+
+        const under = document.elementFromPoint(me.clientX, me.clientY);
+        if (!under) {
+          dropTarget = null;
+          return;
+        }
+
+        const tierHit = under.closest('[data-drop-tier]');
+        const colZoneHit = under.closest('[data-drop-col]');
+        if (!tierHit && !colZoneHit) {
+          dropTarget = null;
+          return;
+        }
+
+        const targetColIdx = tierHit
+          ? Number(tierHit.dataset.dropTier.split(':')[0])
+          : Number(colZoneHit.dataset.dropCol);
+        const colZone = container.querySelector(`[data-drop-col="${targetColIdx}"]`);
+        if (colZone) colZone.classList.add('drop-hover');
+
+        if (dragInfo.kind === 'column') {
+          dropTarget = { kind: 'column', toCol: targetColIdx };
+        } else if (tierHit) {
+          const [tc, tt] = tierHit.dataset.dropTier.split(':').map(Number);
+          const r = tierHit.getBoundingClientRect();
+          const insertAfter = me.clientY > r.top + r.height / 2;
+          dropTarget = { kind: 'tier', toCol: tc, toIndex: insertAfter ? tt + 1 : tt };
+          dropLineEl.style.left = `${Math.round(r.left)}px`;
+          dropLineEl.style.width = `${Math.round(r.width)}px`;
+          dropLineEl.style.top = `${Math.round(insertAfter ? r.bottom + 2 : r.top - 2)}px`;
+          dropLineEl.classList.add('active');
+        } else {
+          const targetCol = project.columns[targetColIdx];
+          dropTarget = { kind: 'tier', toCol: targetColIdx, toIndex: targetCol ? targetCol.tiers.length : 0 };
+        }
+      };
+
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        dragGhostEl.classList.remove('active');
+        clearHighlights();
+
+        if (!isDragging) {
+          if (selectEl) handleSelectElement(selectEl);
+          return;
+        }
+
+        if (!dropTarget) return;
+
+        if (dragInfo.kind === 'column' && dropTarget.kind === 'column') {
+          if (dragInfo.fromCol !== dropTarget.toCol) {
+            pushUndo();
+            const [movedCol] = project.columns.splice(dragInfo.fromCol, 1);
+            project.columns.splice(dropTarget.toCol, 0, movedCol);
+            selection = { type: 'column', colIndex: dropTarget.toCol };
+            renderAll();
+          }
+        } else if (dragInfo.kind === 'tier' && dropTarget.kind === 'tier') {
+          const srcCol = project.columns[dragInfo.fromCol];
+          const dstCol = project.columns[dropTarget.toCol];
+          if (!srcCol || !dstCol) return;
+
+          let insertIdx = dropTarget.toIndex;
+          if (dragInfo.fromCol === dropTarget.toCol) {
+            if (insertIdx === dragInfo.fromTier || insertIdx === dragInfo.fromTier + 1) return;
+            if (insertIdx > dragInfo.fromTier) insertIdx -= 1;
+          }
+
+          pushUndo();
+          const [movedTier] = srcCol.tiers.splice(dragInfo.fromTier, 1);
+          // Ensure destination column has a vertical busbar spec if it didn't have one
+          if (!dstCol.verticalBusbar && (movedTier.role === 'feeder' || movedTier.role === 'interconnector')) {
+            dstCol.verticalBusbar = JSON.parse(JSON.stringify(project.defaultVerticalBusbar));
+          }
+          dstCol.tiers.splice(insertIdx, 0, movedTier);
+          selection = { type: 'tier', colIndex: dropTarget.toCol, tierIndex: insertIdx };
+          renderAll();
+        }
+      };
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    };
+  }
+
+  function handleSelectElement(el) {
+    const type = el.dataset.selectType;
+    if (type === 'mainBusbar') {
+      selection = { type: 'mainBusbar' };
+    } else if (type === 'column') {
+      selection = { type: 'column', colIndex: Number(el.dataset.colIndex) };
+    } else if (type === 'tier') {
+      selection = {
+        type: 'tier',
+        colIndex: Number(el.dataset.colIndex),
+        tierIndex: Number(el.dataset.tierIndex),
+      };
+    }
+    renderAll();
   }
 
   function addTierToColumn(colIndex, templateId) {
     const col = project.columns[colIndex];
     if (!col) return;
+    pushUndo();
     const nextNum = col.tiers.length + 1;
+    const isSpare = templateId === 'spare-space';
+    const isPlaceholder = templateId === 'placeholder-bay';
+    const isAux = templateId === 'aux-chamber';
+    const defaultTag = isSpare
+      ? `SP-${colIndex + 1}0${nextNum}`
+      : isPlaceholder
+      ? `PH-${colIndex + 1}0${nextNum}`
+      : isAux
+      ? `AUX-${colIndex + 1}0${nextNum}`
+      : `F-${colIndex + 1}0${nextNum}`;
     const newTier = window.SGState.makeTierFromTemplate(
       templateId || 'mccb-250',
-      { tag: `F-${colIndex + 1}0${nextNum}` },
+      { tag: defaultTag },
       project.deviceLibrary
     );
     col.tiers.push(newTier);
@@ -197,11 +504,23 @@
   }
 
   function addNewColumn(kind) {
+    pushUndo();
     const num = project.columns.length + 1;
+    const titleSuffix =
+      kind === 'incomer'
+        ? 'Incomer'
+        : kind === 'coupler'
+        ? 'Bus Coupler'
+        : kind === 'interconnector'
+        ? 'Interconnector'
+        : kind === 'spare'
+        ? 'Spare / Future Bay'
+        : 'MCC / Feeders';
+
     const col = {
       id: window.SGState.uid('col'),
-      name: `COL-0${num} ${kind === 'incomer' ? 'Incomer' : kind === 'coupler' ? 'Bus Coupler' : kind === 'interconnector' ? 'Interconnector' : 'MCC / Feeders'}`,
-      widthMm: 800,
+      name: `COL-0${num} ${titleSuffix}`,
+      widthMm: kind === 'spare' ? 600 : 800,
       verticalBusbar: kind === 'incomer' || kind === 'coupler' ? null : JSON.parse(JSON.stringify(project.defaultVerticalBusbar)),
       tiers: [],
     };
@@ -211,6 +530,9 @@
       col.tiers.push(window.SGState.makeTierFromTemplate('coupler-2500', { tag: `BC-${num}`, role: 'bus_coupler', couplerState: 'open' }, project.deviceLibrary));
     } else if (kind === 'interconnector') {
       col.tiers.push(window.SGState.makeTierFromTemplate('interconn-1600', { tag: `IC-${num}`, role: 'interconnector' }, project.deviceLibrary));
+    } else if (kind === 'spare') {
+      col.tiers.push(window.SGState.makeTierFromTemplate('spare-space', { tag: `SP-${num}01`, heightMm: 500 }, project.deviceLibrary));
+      col.tiers.push(window.SGState.makeTierFromTemplate('placeholder-bay', { tag: `PH-${num}02`, heightMm: 500 }, project.deviceLibrary));
     } else {
       col.tiers.push(window.SGState.makeTierFromTemplate('dol-22kw', { tag: `M-${num}01` }, project.deviceLibrary));
       col.tiers.push(window.SGState.makeTierFromTemplate('mccb-250', { tag: `F-${num}02`, operatingCurrentA: 150 }, project.deviceLibrary));
@@ -263,30 +585,30 @@
       <div class="insp-section">
         <div class="insp-section-title">${isMain ? 'Main HBB' : 'Vertical Dropper'} Preset &amp; Type 439 Certificate</div>
         <div class="field">
-          <label>Quick Preset (Standard Construction)</label>
+          ${lbl('Quick Preset (Standard Construction)', 'bb.preset')}
           <select id="bb-preset">
             <option value="">— Custom Construction —</option>
             ${presets.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
           </select>
-          <span class="field-hint">Ex: 1600A = 2×75×6mm (900mm²), 2500A = 2×100×10mm, VBB = 1×60×6mm</span>
+          <span class="field-hint">Ex: 1600A = 2×75×6mm (900mm²), 2500A = 2×100×10mm</span>
         </div>
         <div class="field">
-          <label>Type 439 / IEC 61439 Certificate Ref</label>
-          <input type="text" id="bb-cert" value="${esc(bb.certRef || '')}" placeholder="e.g. ASTA / BS EN 60439-1 Cert #12345" />
+          ${lbl('Type 439 / IEC 61439 Certificate Ref', 'bb.cert')}
+          <input type="text" id="bb-cert" value="${esc(bb.certRef || '')}" placeholder="e.g. BS EN 60439-1 Cert #12345" />
           <span class="field-hint">Ex: BS EN 60439-1 Type 439 Cert — 2×75×6mm Cu</span>
         </div>
         <div class="form-grid">
           <div class="field">
-            <label>Rated Current In (A)</label>
+            ${lbl('Rated Current In (A)', 'bb.rated')}
             <input type="number" id="bb-rated" value="${bb.ratedCurrentA}" min="100" step="50" placeholder="1600" />
             <span class="field-hint">Typ: 630–4000 A (HBB) / 400–1600 A (VBB)</span>
           </div>
           <div class="field">
-            <label>Conductor Material</label>
+            ${lbl('Conductor Material', 'bb.material')}
             <select id="bb-mat">
               ${matOpts.map((m) => `<option value="${m.id}" ${bb.material === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}
             </select>
-            <span class="field-hint">Typ: Cu 100% IACS (ρ=0.01724 Ω·mm²/m)</span>
+            <span class="field-hint">Typ: Cu 100% IACS (ρ=0.01724)</span>
           </div>
         </div>
       </div>
@@ -295,55 +617,55 @@
         <div class="insp-section-title">Conductor Dimensions (Per Phase)</div>
         <div class="form-grid-3">
           <div class="field">
-            <label>Bars / Ph</label>
+            ${lbl('Bars / Ph', 'bb.bars')}
             <input type="number" id="bb-bars" value="${bb.barsPerPhase}" min="1" max="8" step="1" placeholder="2" />
-            <span class="field-hint">Typ: 1–4 bars</span>
+            <span class="field-hint">Typ: 1–4</span>
           </div>
           <div class="field">
-            <label>Width (mm)</label>
+            ${lbl('Width (mm)', 'bb.width')}
             <input type="number" id="bb-w" value="${bb.widthMm}" min="10" max="200" step="5" placeholder="75" />
-            <span class="field-hint">Typ: 40–100mm</span>
+            <span class="field-hint">Typ: 40–100</span>
           </div>
           <div class="field">
-            <label>Thick (mm)</label>
+            ${lbl('Thick (mm)', 'bb.thickness')}
             <input type="number" id="bb-t" value="${bb.thicknessMm}" min="3" max="20" step="1" placeholder="6" />
-            <span class="field-hint">Typ: 5, 6, 8, 10</span>
+            <span class="field-hint">Typ: 5,6,8,10</span>
           </div>
         </div>
         <div class="form-grid-3">
           <div class="field">
-            <label>Bar Gap (mm)</label>
+            ${lbl('Bar Gap', 'bb.gap')}
             <input type="number" id="bb-gap" value="${bb.gapMm || bb.thicknessMm}" min="2" max="30" placeholder="6" />
-            <span class="field-hint">Typ: = bar thick</span>
+            <span class="field-hint">Typ: = thick</span>
           </div>
           <div class="field">
-            <label>Phase Ctr (mm)</label>
+            ${lbl('Phase Ctr', 'bb.spacing')}
             <input type="number" id="bb-spacing" value="${bb.phaseSpacingMm || 120}" min="40" max="400" step="5" placeholder="120" />
-            <span class="field-hint">Typ: 90–160mm</span>
+            <span class="field-hint">Typ: 90–160</span>
           </div>
           <div class="field">
-            <label>Op Temp (°C)</label>
+            ${lbl('Op Temp °C', 'bb.temp')}
             <input type="number" id="bb-temp" value="${bb.operatingTempC}" min="20" max="125" step="5" placeholder="70" />
             <span class="field-hint">Typ: 70–85°C</span>
           </div>
         </div>
         <div class="form-grid">
           <div class="field">
-            <label>Bar Orientation</label>
+            ${lbl('Bar Orientation', 'bb.orient')}
             <select id="bb-orient">
               <option value="edge" ${bb.orientation !== 'flat' ? 'selected' : ''}>Edge-on (Standard)</option>
               <option value="flat" ${bb.orientation === 'flat' ? 'selected' : ''}>Flat-on</option>
             </select>
-            <span class="field-hint">Edge-on gives better cooling &amp; lower prox</span>
+            <span class="field-hint">Edge-on gives lower prox &amp; better cooling</span>
           </div>
           <div class="field">
-            <label>Neutral Bar Sizing</label>
+            ${lbl('Neutral Bar Sizing', 'bb.neutral')}
             <select id="bb-neutral">
               <option value="1" ${bb.neutralSizeRatio === 1 ? 'selected' : ''}>100% of Phase</option>
               <option value="0.5" ${bb.neutralSizeRatio === 0.5 ? 'selected' : ''}>50% of Phase</option>
               <option value="0" ${bb.neutralSizeRatio === 0 ? 'selected' : ''}>No Neutral (3P)</option>
             </select>
-            <span class="field-hint">Typ: 50% (industrial) or 100% (harmonics)</span>
+            <span class="field-hint">Typ: 50% (motors) or 100% (harmonics)</span>
           </div>
         </div>
       </div>
@@ -352,15 +674,15 @@
         <div class="insp-section-title">DC → AC Conversion (Skin &amp; Proximity)</div>
         <div class="form-grid">
           <div class="field">
-            <label>AC Factor Method</label>
+            ${lbl('AC Factor Method', 'bb.acmode')}
             <select id="bb-acmode">
               <option value="manual" ${bb.acFactorMode !== 'calculated' ? 'selected' : ''}>Manual Factor (S)</option>
               <option value="calculated" ${bb.acFactorMode === 'calculated' ? 'selected' : ''}>Calculated Skin/Prox</option>
             </select>
-            <span class="field-hint">Choose manual S or calculated skin/prox</span>
+            <span class="field-hint">Manual S or calculated skin/prox</span>
           </div>
           <div class="field">
-            <label>${bb.acFactorMode === 'calculated' ? 'Enclosure Eddy (ye)' : 'Manual Factor S'}</label>
+            ${bb.acFactorMode === 'calculated' ? lbl('Enclosure Eddy (ye)', 'bb.ye') : lbl('Manual Factor S', 'bb.manualS')}
             ${
               bb.acFactorMode === 'calculated'
                 ? `<input type="number" id="bb-ye" value="${bb.enclosureEddyFactor != null ? bb.enclosureEddyFactor : 0.02}" min="0" max="0.2" step="0.01" placeholder="0.02" />
@@ -390,7 +712,7 @@
 
     const bind = (id, fn) => {
       const el = document.getElementById(id);
-      if (el) el.addEventListener('change', () => { fn(el.value); renderAll(); });
+      if (el) el.addEventListener('change', () => { pushUndo(); fn(el.value); renderAll(); });
     };
 
     bind('bb-preset', (val) => {
@@ -434,20 +756,20 @@
       <div class="insp-section">
         <div class="insp-section-title">Cubicle / Column Geometry</div>
         <div class="field">
-          <label>Column Name</label>
+          ${lbl('Column Name', 'col.name')}
           <input type="text" id="col-name" value="${esc(col.name)}" placeholder="e.g. COL-02 MCC Tier 1" />
           <span class="field-hint">Ex: COL-01 Incomer, COL-02 MCC, COL-05 Interconnector</span>
         </div>
         <div class="form-grid">
           <div class="field">
-            <label>Cubicle Width (mm)</label>
+            ${lbl('Cubicle Width (mm)', 'col.width')}
             <input type="number" id="col-width" value="${col.widthMm}" min="300" max="2000" step="50" placeholder="800" />
-            <span class="field-hint">Typ: 600, 800, 1000 mm (drives HBB length)</span>
+            <span class="field-hint">Typ: 600, 800, 1000 mm</span>
           </div>
           <div class="field">
-            <label>X Centreline (mm)</label>
+            ${lbl('X Centreline (mm)', 'col.xcenter')}
             <input type="text" value="${Math.round(cr.xCenterMm)} mm" disabled />
-            <span class="field-hint">Auto-computed from left edge of board</span>
+            <span class="field-hint">Drives HBB segment spans</span>
           </div>
         </div>
         <div class="calc-readout explainable" id="col-calc-readout" title="Click to inspect column thermal breakdown">
@@ -465,15 +787,19 @@
       </div>
 
       <div class="insp-section">
-        <div class="insp-section-title">Add Compartment / Tier to Column</div>
+        <div class="insp-section-title">Add Compartment / Spare / Placeholder</div>
         <div class="field">
-          <label>Select Device / Starter Template</label>
+          ${lbl('Select Device / Starter / Spare Template', 'tier.template')}
           <select id="col-add-tpl">
             ${project.deviceLibrary.map((t) => `<option value="${t.id}">[${esc(t.category)}] ${esc(t.name)}</option>`).join('')}
           </select>
-          <span class="field-hint">Templates include typical IEC rated &amp; fixed coil losses</span>
+          <span class="field-hint">Pick a starter, breaker, spare space, or placeholder bay</span>
         </div>
-        <button id="col-add-tier-btn" class="btn btn-sm btn-primary">+ Add Selected Tier to ${esc(col.name)}</button>
+        <div class="action-row">
+          <button id="col-add-tier-btn" class="btn btn-sm btn-primary">+ Add Selected</button>
+          <button id="col-add-spare-btn" class="btn btn-sm btn-secondary">+ Spare Space</button>
+          <button id="col-add-ph-btn" class="btn btn-sm btn-secondary">+ Placeholder</button>
+        </div>
       </div>
 
       <div id="col-vbb-slot"></div>
@@ -490,15 +816,18 @@
     renderBusbarInspector(vbbSlot, col.verticalBusbar, cr.vbbRes, ratedVbbWPerM, false, colIdx);
 
     document.getElementById('col-name').addEventListener('change', (e) => {
+      pushUndo();
       col.name = e.target.value;
       renderAll();
     });
     document.getElementById('col-width').addEventListener('change', (e) => {
+      pushUndo();
       col.widthMm = Math.max(300, Number(e.target.value) || 800);
       renderAll();
     });
     document.getElementById('col-move-left').addEventListener('click', () => {
       if (colIdx <= 0) return;
+      pushUndo();
       const tmp = project.columns[colIdx - 1];
       project.columns[colIdx - 1] = project.columns[colIdx];
       project.columns[colIdx] = tmp;
@@ -507,6 +836,7 @@
     });
     document.getElementById('col-move-right').addEventListener('click', () => {
       if (colIdx >= project.columns.length - 1) return;
+      pushUndo();
       const tmp = project.columns[colIdx + 1];
       project.columns[colIdx + 1] = project.columns[colIdx];
       project.columns[colIdx] = tmp;
@@ -515,14 +845,16 @@
     });
     document.getElementById('col-delete').addEventListener('click', () => {
       if (project.columns.length <= 1) return;
+      pushUndo();
       project.columns.splice(colIdx, 1);
       selection = { type: 'mainBusbar' };
       renderAll();
     });
     document.getElementById('col-add-tier-btn').addEventListener('click', () => {
-      const tplId = document.getElementById('col-add-tpl').value;
-      addTierToColumn(colIdx, tplId);
+      addTierToColumn(colIdx, document.getElementById('col-add-tpl').value);
     });
+    document.getElementById('col-add-spare-btn').addEventListener('click', () => addTierToColumn(colIdx, 'spare-space'));
+    document.getElementById('col-add-ph-btn').addEventListener('click', () => addTierToColumn(colIdx, 'placeholder-bay'));
   }
 
   function renderTierInspector(container, col, tier, tr, colIdx, tierIdx) {
@@ -531,53 +863,55 @@
     const isIncomer = tier.role === 'incomer';
     const isCoupler = tier.role === 'bus_coupler';
     const isFeeder = tier.role === 'feeder';
+    const isSpacer = tier.role === 'spacer';
 
     container.innerHTML = `
       <div class="insp-section">
         <div class="insp-section-title">Compartment Identity &amp; GA Position</div>
         <div class="form-grid">
           <div class="field">
-            <label>Tag / Circuit ID</label>
-            <input type="text" id="t-tag" value="${esc(tier.tag)}" placeholder="e.g. M-101 or F-301" />
-            <span class="field-hint">Ex: INC-A, M-101, VSD-202, IC-AB</span>
+            ${lbl('Tag / Circuit ID', 'tier.tag')}
+            <input type="text" id="t-tag" value="${esc(tier.tag)}" placeholder="e.g. M-101 or SP-01" />
+            <span class="field-hint">Ex: INC-A, M-101, SP-01</span>
           </div>
           <div class="field">
-            <label>Status</label>
+            ${lbl('Status', 'tier.status')}
             <select id="t-status">
               <option value="active" ${tier.status === 'active' ? 'selected' : ''}>Active (Running)</option>
               <option value="future" ${tier.status === 'future' ? 'selected' : ''}>Future Capacity</option>
               <option value="standby" ${tier.status === 'standby' ? 'selected' : ''}>Standby / Off</option>
             </select>
-            <span class="field-hint">Future loads activate in Future scenarios</span>
+            <span class="field-hint">Controls scenario activation</span>
           </div>
           <div class="field full">
-            <label>Description</label>
+            ${lbl('Description', 'tier.desc')}
             <input type="text" id="t-desc" value="${esc(tier.description)}" placeholder="e.g. Cooling Water Pump 1 — 55 kW DOL" />
             <span class="field-hint">Shown on schedules &amp; PDF report</span>
           </div>
           <div class="field">
-            <label>Role</label>
+            ${lbl('Role', 'tier.role')}
             <select id="t-role">
               <option value="feeder" ${isFeeder ? 'selected' : ''}>Outgoing Feeder / Starter</option>
               <option value="incomer" ${isIncomer ? 'selected' : ''}>Main Incomer</option>
               <option value="bus_coupler" ${isCoupler ? 'selected' : ''}>Bus-Section Coupler</option>
               <option value="interconnector" ${isInterconn ? 'selected' : ''}>Interconnector (Firm Supply)</option>
+              <option value="spacer" ${isSpacer ? 'selected' : ''}>Spare Space / Placeholder</option>
             </select>
-            <span class="field-hint">Defines current flow direction on busbars</span>
+            <span class="field-hint">Electrical role on busbar</span>
           </div>
           <div class="field">
-            <label>Tier Height (mm)</label>
+            ${lbl('Tier Height (mm)', 'tier.height')}
             <input type="number" id="t-height" value="${tier.heightMm}" min="120" max="1600" step="20" placeholder="300" />
-            <span class="field-hint">Typ: 200–350 DOL, 600 VSD, 800 ACB</span>
+            <span class="field-hint">Typ: 200–350 DOL, 600 VSD</span>
           </div>
         </div>
         <div class="field">
-          <label>Apply Device / Starter Template</label>
+          ${lbl(isSpacer ? 'Convert Spare/Placeholder to Equipment' : 'Apply Device / Starter Template', 'tier.template')}
           <select id="t-template">
             <option value="">— Keep Custom Settings —</option>
             ${project.deviceLibrary.map((t) => `<option value="${t.id}" ${tier.templateId === t.id ? 'selected' : ''}>[${esc(t.category)}] ${esc(t.name)}</option>`).join('')}
           </select>
-          <span class="field-hint">Auto-fills typical rated In, Pn (W), fixed coil W &amp; height</span>
+          <span class="field-hint">Auto-fills typical rated In, Pn (W), fixed W &amp; height</span>
         </div>
         <div class="action-row">
           <button id="t-up" class="btn btn-sm btn-secondary" ${tierIdx === 0 ? 'disabled' : ''}>↑ Up</button>
@@ -588,18 +922,31 @@
       </div>
 
       ${
+        isSpacer
+          ? `<div class="insp-section">
+              <div class="insp-section-title">Spare Space / Placeholder Properties</div>
+              <div class="field">
+                ${lbl('Fixed Auxiliary Heat (W) — Optional', 'tier.pfix')}
+                <input type="number" id="t-pfix" value="${tier.fixedLossW || 0}" min="0" step="5" placeholder="0" />
+                <span class="field-hint">0 W for blank spare/placeholder; 10–25 W for metering/control chamber</span>
+              </div>
+              <div class="toolbar-hint">This bay occupies ${tier.heightMm} mm of physical vertical space on the GA so lower compartments maintain accurate busbar dropper lengths. You can drag it anywhere or convert it using the template dropdown above.</div>
+            </div>`
+          : ''
+      }
+
+      ${
         isIncomer
           ? `<div class="insp-section">
               <div class="insp-section-title">Incomer Switching State</div>
               <div class="field">
-                <label>Breaker Position</label>
+                ${lbl('Breaker Position', 'tier.incState')}
                 <select id="t-inc-state">
                   <option value="closed" ${tier.incomerState !== 'open' ? 'selected' : ''}>CLOSED (Energized / Supplying Bus)</option>
                   <option value="open" ${tier.incomerState === 'open' ? 'selected' : ''}>OPEN (Isolated / Out of Service)</option>
                 </select>
-                <span class="field-hint">Typ: CLOSED normal; OPEN to simulate Tx outage (with closed coupler)</span>
+                <span class="field-hint">Typ: CLOSED normal; OPEN to simulate Tx outage</span>
               </div>
-              <div class="toolbar-hint">Operating current is automatically summed from all active loads &amp; N-1 interconnector transfer in this electrical section.</div>
             </div>`
           : ''
       }
@@ -609,12 +956,12 @@
           ? `<div class="insp-section">
               <div class="insp-section-title">Bus-Section Coupler State</div>
               <div class="field">
-                <label>Coupler Position</label>
+                ${lbl('Coupler Position', 'tier.couplerState')}
                 <select id="t-coupler-state">
                   <option value="open" ${tier.couplerState !== 'closed' ? 'selected' : ''}>OPEN (Split Bus Sections)</option>
-                  <option value="closed" ${tier.couplerState === 'closed' ? 'selected' : ''}>CLOSED (Coupled / Single Incomer Feeding Both)</option>
+                  <option value="closed" ${tier.couplerState === 'closed' ? 'selected' : ''}>CLOSED (Coupled / Parallel or Single Incomer)</option>
                 </select>
-                <span class="field-hint">Typ: OPEN under dual-Tx normal, CLOSED during N-1 Tx outage</span>
+                <span class="field-hint">OPEN under normal dual-Tx; CLOSED for N-1 feed</span>
               </div>
             </div>`
           : ''
@@ -625,39 +972,39 @@
           ? `<div class="insp-section">
               <div class="insp-section-title">Firm Supply Interconnector (A → B Side)</div>
               <div class="field">
-                <label>Remote Switchboard Name</label>
+                ${lbl('Remote Switchboard Name', 'tier.remoteBoard')}
                 <input type="text" id="t-remote-board" value="${esc(tier.remoteBoardName || 'MSB-B (Firm Supply)')}" placeholder="e.g. MSB-B (Firm Supply)" />
                 <span class="field-hint">Ex: MSB-B, Switchboard B-Side</span>
               </div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Normal Transfer (A)</label>
+                  ${lbl('Normal Transfer (A)', 'tier.normTransfer')}
                   <input type="number" id="t-norm-a" value="${tier.normalTransferCurrentA || 0}" min="0" step="10" placeholder="0" />
-                  <span class="field-hint">Typ: 0 A when A &amp; B run split</span>
+                  <span class="field-hint">Typ: 0 A when A &amp; B split</span>
                 </div>
                 <div class="field">
-                  <label>N-1 Transfer Load (A)</label>
+                  ${lbl('N-1 Transfer Load (A)', 'tier.n1Transfer')}
                   <input type="number" id="t-n1-a" value="${tier.n1TransferCurrentA || 850}" min="0" step="10" placeholder="850" />
-                  <span class="field-hint">Typ: 600–1600 A (B-side board load)</span>
+                  <span class="field-hint">Typ: 600–1600 A (B-side load)</span>
                 </div>
               </div>
               <div class="insp-section-title" style="margin-top:6px;">Internal Interconnector Cable Entry Loss</div>
               <label class="toggle-chip"><input type="checkbox" id="t-cable-en" ${tier.cableSpec && tier.cableSpec.includeCableLoss ? 'checked' : ''} /> Include internal cable riser heat loss</label>
               <div class="form-grid-3">
                 <div class="field">
-                  <label>Cables/Ph</label>
+                  ${lbl('Cables/Ph', 'tier.cableN')}
                   <input type="number" id="t-cable-n" value="${(tier.cableSpec && tier.cableSpec.cablesPerPhase) || 3}" min="1" max="8" placeholder="3" />
-                  <span class="field-hint">Typ: 2–4×/ph</span>
+                  <span class="field-hint">Typ: 2–4×</span>
                 </div>
                 <div class="field">
-                  <label>CSA (mm²)</label>
+                  ${lbl('CSA (mm²)', 'tier.cableCsa')}
                   <input type="number" id="t-cable-csa" value="${(tier.cableSpec && tier.cableSpec.csaMm2) || 240}" min="16" max="630" placeholder="240" />
                   <span class="field-hint">Typ: 185–300</span>
                 </div>
                 <div class="field">
-                  <label>Length (m)</label>
+                  ${lbl('Length (m)', 'tier.cableLen')}
                   <input type="number" id="t-cable-len" value="${(tier.cableSpec && tier.cableSpec.internalLengthM) || 2.5}" min="0" step="0.5" placeholder="2.5" />
-                  <span class="field-hint">Typ: 1.5–3.5 m</span>
+                  <span class="field-hint">Typ: 1.5–3.5m</span>
                 </div>
               </div>
             </div>`
@@ -670,149 +1017,158 @@
               <div class="insp-section-title">Operating Load vs Rated Current</div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Load Entry Mode</label>
+                  ${lbl('Load Entry Mode', 'tier.loadMode')}
                   <select id="t-load-mode">
                     <option value="kw" ${tier.loadInputMode === 'kw' ? 'selected' : ''}>Motor / Load kW</option>
                     <option value="amps" ${tier.loadInputMode !== 'kw' ? 'selected' : ''}>Direct Amps (Iop)</option>
                   </select>
-                  <span class="field-hint">Use kW for motors, Amps for sub-DBs</span>
+                  <span class="field-hint">kW for motors, Amps for sub-DBs</span>
                 </div>
                 <div class="field">
-                  <label>Duty / Load Factor</label>
+                  ${lbl('Duty / Load Factor', 'tier.loadFactor')}
                   <input type="number" id="t-load-factor" value="${tier.loadFactor != null ? tier.loadFactor : 1.0}" min="0" max="1.25" step="0.05" placeholder="0.85" />
-                  <span class="field-hint">Typ: 0.80–0.90 pumps/fans, 1.0 cont.</span>
+                  <span class="field-hint">Typ: 0.80–0.90 pumps, 1.0 cont.</span>
                 </div>
               </div>
               ${
                 tier.loadInputMode === 'kw'
                   ? `<div class="form-grid-3">
                       <div class="field">
-                        <label>Power (kW)</label>
+                        ${lbl('Power (kW)', 'tier.kw')}
                         <input type="number" id="t-kw" value="${tier.loadKw || 0}" min="0" step="0.5" placeholder="37" />
-                        <span class="field-hint">Ex: 7.5–110 kW</span>
+                        <span class="field-hint">Ex: 7.5–110</span>
                       </div>
                       <div class="field">
-                        <label>PF (cosφ)</label>
+                        ${lbl('PF (cosφ)', 'tier.pf')}
                         <input type="number" id="t-pf" value="${tier.powerFactor || 0.85}" min="0.2" max="1" step="0.01" placeholder="0.85" />
-                        <span class="field-hint">Typ: 0.85 (0.95 VSD)</span>
+                        <span class="field-hint">Typ: 0.85</span>
                       </div>
                       <div class="field">
-                        <label>Eff (η)</label>
+                        ${lbl('Eff (η)', 'tier.eff')}
                         <input type="number" id="t-eff" value="${tier.efficiency || 0.93}" min="0.2" max="1" step="0.01" placeholder="0.93" />
-                        <span class="field-hint">Typ: 0.90–0.95 IE3</span>
+                        <span class="field-hint">Typ: 0.90–0.95</span>
                       </div>
                     </div>`
                   : `<div class="field">
-                      <label>Base Operating Current (A)</label>
+                      ${lbl('Base Operating Current (A)', 'tier.amps')}
                       <input type="number" id="t-amps" value="${tier.operatingCurrentA || 0}" min="0" step="5" placeholder="160" />
-                      <span class="field-hint">Typ: 50%–80% of breaker rated In (${Math.round(tier.ratedCurrentA * 0.5)}–${Math.round(tier.ratedCurrentA * 0.8)} A)</span>
+                      <span class="field-hint">Typ: 50%–80% of In (${Math.round(tier.ratedCurrentA * 0.5)}–${Math.round(tier.ratedCurrentA * 0.8)} A)</span>
                     </div>`
               }
             </div>`
           : ''
       }
 
-      <div class="insp-section">
-        <div class="insp-section-title">Manufacturer Loss Data (P_op = P_fix + P_n·(Iop/In)²)</div>
-        <div class="form-grid-3">
-          <div class="field">
-            <label>Rated In (A)</label>
-            <input type="number" id="t-in" value="${tier.ratedCurrentA}" min="1" step="10" placeholder="100" />
-            <span class="field-hint">Device frame In</span>
-          </div>
-          <div class="field">
-            <label>Rated Pn (W)</label>
-            <input type="number" id="t-pn" value="${tier.ratedLossW}" min="0" step="1" ${tier.subComponents ? 'disabled title="Summed from sub-components below"' : ''} placeholder="42" />
-            <span class="field-hint">3P loss @ In</span>
-          </div>
-          <div class="field">
-            <label>Fixed W</label>
-            <input type="number" id="t-pfix" value="${tier.fixedLossW || 0}" min="0" step="1" ${tier.subComponents ? 'disabled title="Summed from sub-components below"' : ''} placeholder="12" />
-            <span class="field-hint">Coil/relay/fan</span>
-          </div>
-        </div>
-
-        ${
-          tier.subComponents && tier.subComponents.length
-            ? `<div style="margin-top:4px;">
-                <span class="field-hint" style="display:block;margin-bottom:4px;">Typ DOL: MCCB 15–32W, Contactor 10–35W + 8–15W coil, O/L 6–12W, Control 3–5W.</span>
-                <div class="subcomp-row" style="color:var(--text-2);font-weight:700;margin-bottom:3px;">
-                  <span>Sub-Component</span><span>In(A)</span><span>Pn(W)</span><span>Fix(W)</span><span></span>
+      ${
+        !isSpacer
+          ? `<div class="insp-section">
+              <div class="insp-section-title">Manufacturer Loss Data (P_op = P_fix + P_n·(Iop/In)²)</div>
+              <div class="form-grid-3">
+                <div class="field">
+                  ${lbl('Rated In', 'tier.in')}
+                  <input type="number" id="t-in" value="${tier.ratedCurrentA}" min="1" step="10" placeholder="100" />
+                  <span class="field-hint">Frame (A)</span>
                 </div>
-                ${tier.subComponents
-                  .map(
-                    (sc, sIdx) => `
-                  <div class="subcomp-row">
-                    <input type="text" data-sc-idx="${sIdx}" data-sc-field="name" value="${esc(sc.name)}" />
-                    <input type="number" data-sc-idx="${sIdx}" data-sc-field="ratedCurrentA" value="${sc.ratedCurrentA}" />
-                    <input type="number" data-sc-idx="${sIdx}" data-sc-field="ratedLossW" value="${sc.ratedLossW}" />
-                    <input type="number" data-sc-idx="${sIdx}" data-sc-field="fixedLossW" value="${sc.fixedLossW || 0}" />
-                    <button class="btn btn-sm btn-danger" style="padding:2px 4px;" data-sc-del="${sIdx}">×</button>
-                  </div>`
-                  )
-                  .join('')}
-                <button id="t-add-subcomp" class="btn btn-sm btn-secondary" style="margin-top:6px;">+ Add Sub-Component</button>
-              </div>`
-            : `<button id="t-convert-subcomp" class="btn btn-sm btn-secondary">Break into Sub-Components (Contactor/O/L/Coil)</button>`
-        }
+                <div class="field">
+                  ${lbl('Rated Pn', 'tier.pn')}
+                  <input type="number" id="t-pn" value="${tier.ratedLossW}" min="0" step="1" ${tier.subComponents ? 'disabled title="Summed from sub-components below"' : ''} placeholder="42" />
+                  <span class="field-hint">3P W @ In</span>
+                </div>
+                <div class="field">
+                  ${lbl('Fixed W', 'tier.pfix')}
+                  <input type="number" id="t-pfix" value="${tier.fixedLossW || 0}" min="0" step="1" ${tier.subComponents ? 'disabled title="Summed from sub-components below"' : ''} placeholder="12" />
+                  <span class="field-hint">Coil/aux W</span>
+                </div>
+              </div>
 
-        <div class="calc-readout explainable" id="tier-calc-readout" title="Click to inspect step-by-step operating vs rated loss calculation">
-          <div class="calc-row"><span class="lbl">Operating Current Iop:</span><span class="val">${tr.iOp.toFixed(1)} A (${(dl.loadRatio * 100).toFixed(0)}% of ${tier.ratedCurrentA}A)</span></div>
-          <div class="calc-row"><span class="lbl">Joule Scaling (Iop/In)²:</span><span class="val">${dl.loadRatioSq.toFixed(3)}</span></div>
-          <div class="calc-row"><span class="lbl">Device Variable + Fixed:</span><span class="val">${dl.pVarW.toFixed(1)} W + ${dl.pFixedW.toFixed(1)} W = ${dl.pTotalW.toFixed(1)} W</span></div>
-          <div class="calc-row"><span class="lbl">Take-off Tail &amp; Joint:</span><span class="val">${(tr.takeoffLossW || 0).toFixed(1)} W (EL +${Math.round(project.config.panelHeightMm - tr.yCenterMm)} mm)</span></div>
-          ${tr.cableLoss && tr.cableLoss.totalW > 0 ? `<div class="calc-row"><span class="lbl">Interconn Cable Loss:</span><span class="val">${tr.cableLoss.totalW.toFixed(1)} W (${tr.cableLoss.wPerM.toFixed(1)} W/m)</span></div>` : ''}
-          <div class="calc-row highlight"><span class="lbl">Compartment Total Loss:</span><span class="val">${(dl.pTotalW + (tr.takeoffLossW || 0) + (tr.cableLoss ? tr.cableLoss.totalW : 0)).toFixed(1)} W</span></div>
-          <div class="calc-explain-footer"><span>Click for full worked steps &amp; commentary</span><span>Analyse ↗</span></div>
-        </div>
-      </div>
+              ${
+                tier.subComponents && tier.subComponents.length
+                  ? `<div style="margin-top:4px;">
+                      <span class="field-hint" style="display:block;margin-bottom:4px;">Typ DOL: MCCB 15–32W, Contactor 10–35W + 8–15W coil, O/L 6–12W.</span>
+                      <div class="subcomp-row" style="color:var(--text-2);font-weight:700;margin-bottom:3px;">
+                        <span>Sub-Component</span><span>In(A)</span><span>Pn(W)</span><span>Fix(W)</span><span></span>
+                      </div>
+                      ${tier.subComponents
+                        .map(
+                          (sc, sIdx) => `
+                        <div class="subcomp-row">
+                          <input type="text" data-sc-idx="${sIdx}" data-sc-field="name" value="${esc(sc.name)}" />
+                          <input type="number" data-sc-idx="${sIdx}" data-sc-field="ratedCurrentA" value="${sc.ratedCurrentA}" />
+                          <input type="number" data-sc-idx="${sIdx}" data-sc-field="ratedLossW" value="${sc.ratedLossW}" />
+                          <input type="number" data-sc-idx="${sIdx}" data-sc-field="fixedLossW" value="${sc.fixedLossW || 0}" />
+                          <button class="btn btn-sm btn-danger" style="padding:2px 4px;" data-sc-del="${sIdx}">×</button>
+                        </div>`
+                        )
+                        .join('')}
+                      <button id="t-add-subcomp" class="btn btn-sm btn-secondary" style="margin-top:6px;">+ Add Sub-Component</button>
+                    </div>`
+                  : `<button id="t-convert-subcomp" class="btn btn-sm btn-secondary">Break into Sub-Components (Contactor/O/L/Coil)</button>`
+              }
+
+              <div class="calc-readout explainable" id="tier-calc-readout" title="Click to inspect step-by-step operating vs rated loss calculation">
+                <div class="calc-row"><span class="lbl">Operating Current Iop:</span><span class="val">${tr.iOp.toFixed(1)} A (${(dl.loadRatio * 100).toFixed(0)}% of ${tier.ratedCurrentA}A)</span></div>
+                <div class="calc-row"><span class="lbl">Joule Scaling (Iop/In)²:</span><span class="val">${dl.loadRatioSq.toFixed(3)}</span></div>
+                <div class="calc-row"><span class="lbl">Device Variable + Fixed:</span><span class="val">${dl.pVarW.toFixed(1)} W + ${dl.pFixedW.toFixed(1)} W = ${dl.pTotalW.toFixed(1)} W</span></div>
+                <div class="calc-row"><span class="lbl">Take-off Tail &amp; Joint:</span><span class="val">${(tr.takeoffLossW || 0).toFixed(1)} W (EL +${Math.round(project.config.panelHeightMm - tr.yCenterMm)} mm)</span></div>
+                ${tr.cableLoss && tr.cableLoss.totalW > 0 ? `<div class="calc-row"><span class="lbl">Interconn Cable Loss:</span><span class="val">${tr.cableLoss.totalW.toFixed(1)} W (${tr.cableLoss.wPerM.toFixed(1)} W/m)</span></div>` : ''}
+                <div class="calc-row highlight"><span class="lbl">Compartment Total Loss:</span><span class="val">${(dl.pTotalW + (tr.takeoffLossW || 0) + (tr.cableLoss ? tr.cableLoss.totalW : 0)).toFixed(1)} W</span></div>
+                <div class="calc-explain-footer"><span>Click for full worked steps &amp; commentary</span><span>Analyse ↗</span></div>
+              </div>
+            </div>`
+          : ''
+      }
     `;
 
-    document.getElementById('tier-calc-readout').addEventListener('click', () => {
-      openExplain('tier.loss', { colIndex: colIdx, tierIndex: tierIdx });
-    });
+    const readoutEl = document.getElementById('tier-calc-readout');
+    if (readoutEl) {
+      readoutEl.addEventListener('click', () => openExplain('tier.loss', { colIndex: colIdx, tierIndex: tierIdx }));
+    }
 
     const on = (id, ev, fn) => {
       const el = document.getElementById(id);
       if (el) el.addEventListener(ev, fn);
     };
 
-    on('t-tag', 'change', (e) => { tier.tag = e.target.value; renderAll(); });
-    on('t-status', 'change', (e) => { tier.status = e.target.value; renderAll(); });
-    on('t-desc', 'change', (e) => { tier.description = e.target.value; renderAll(); });
-    on('t-role', 'change', (e) => { tier.role = e.target.value; renderAll(); });
-    on('t-height', 'change', (e) => { tier.heightMm = Math.max(120, Number(e.target.value) || 250); renderAll(); });
-    on('t-in', 'change', (e) => { tier.ratedCurrentA = Math.max(1, Number(e.target.value) || 100); renderAll(); });
-    on('t-pn', 'change', (e) => { tier.ratedLossW = Math.max(0, Number(e.target.value) || 0); renderAll(); });
-    on('t-pfix', 'change', (e) => { tier.fixedLossW = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-tag', 'change', (e) => { pushUndo(); tier.tag = e.target.value; renderAll(); });
+    on('t-status', 'change', (e) => { pushUndo(); tier.status = e.target.value; renderAll(); });
+    on('t-desc', 'change', (e) => { pushUndo(); tier.description = e.target.value; renderAll(); });
+    on('t-role', 'change', (e) => { pushUndo(); tier.role = e.target.value; renderAll(); });
+    on('t-height', 'change', (e) => { pushUndo(); tier.heightMm = Math.max(120, Number(e.target.value) || 250); renderAll(); });
+    on('t-in', 'change', (e) => { pushUndo(); tier.ratedCurrentA = Math.max(1, Number(e.target.value) || 100); renderAll(); });
+    on('t-pn', 'change', (e) => { pushUndo(); tier.ratedLossW = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-pfix', 'change', (e) => { pushUndo(); tier.fixedLossW = Math.max(0, Number(e.target.value) || 0); renderAll(); });
 
-    on('t-inc-state', 'change', (e) => { tier.incomerState = e.target.value; renderAll(); });
-    on('t-coupler-state', 'change', (e) => { tier.couplerState = e.target.value; renderAll(); });
-    on('t-remote-board', 'change', (e) => { tier.remoteBoardName = e.target.value; renderAll(); });
-    on('t-norm-a', 'change', (e) => { tier.normalTransferCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
-    on('t-n1-a', 'change', (e) => { tier.n1TransferCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-inc-state', 'change', (e) => { pushUndo(); tier.incomerState = e.target.value; renderAll(); });
+    on('t-coupler-state', 'change', (e) => { pushUndo(); tier.couplerState = e.target.value; renderAll(); });
+    on('t-remote-board', 'change', (e) => { pushUndo(); tier.remoteBoardName = e.target.value; renderAll(); });
+    on('t-norm-a', 'change', (e) => { pushUndo(); tier.normalTransferCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-n1-a', 'change', (e) => { pushUndo(); tier.n1TransferCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
     on('t-cable-en', 'change', (e) => {
+      pushUndo();
       tier.cableSpec = tier.cableSpec || { material: 'cu_100', cablesPerPhase: 3, csaMm2: 240, internalLengthM: 2.5, operatingTempC: 70 };
       tier.cableSpec.includeCableLoss = e.target.checked;
       renderAll();
     });
-    on('t-cable-n', 'change', (e) => { tier.cableSpec.cablesPerPhase = Math.max(1, Number(e.target.value) || 1); renderAll(); });
-    on('t-cable-csa', 'change', (e) => { tier.cableSpec.csaMm2 = Math.max(10, Number(e.target.value) || 240); renderAll(); });
-    on('t-cable-len', 'change', (e) => { tier.cableSpec.internalLengthM = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-cable-n', 'change', (e) => { pushUndo(); tier.cableSpec.cablesPerPhase = Math.max(1, Number(e.target.value) || 1); renderAll(); });
+    on('t-cable-csa', 'change', (e) => { pushUndo(); tier.cableSpec.csaMm2 = Math.max(10, Number(e.target.value) || 240); renderAll(); });
+    on('t-cable-len', 'change', (e) => { pushUndo(); tier.cableSpec.internalLengthM = Math.max(0, Number(e.target.value) || 0); renderAll(); });
 
-    on('t-load-mode', 'change', (e) => { tier.loadInputMode = e.target.value; renderAll(); });
-    on('t-load-factor', 'change', (e) => { tier.loadFactor = Math.max(0, Number(e.target.value)); renderAll(); });
-    on('t-kw', 'change', (e) => { tier.loadKw = Math.max(0, Number(e.target.value) || 0); renderAll(); });
-    on('t-pf', 'change', (e) => { tier.powerFactor = Math.min(1, Math.max(0.1, Number(e.target.value) || 0.85)); renderAll(); });
-    on('t-eff', 'change', (e) => { tier.efficiency = Math.min(1, Math.max(0.1, Number(e.target.value) || 0.93)); renderAll(); });
-    on('t-amps', 'change', (e) => { tier.operatingCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-load-mode', 'change', (e) => { pushUndo(); tier.loadInputMode = e.target.value; renderAll(); });
+    on('t-load-factor', 'change', (e) => { pushUndo(); tier.loadFactor = Math.max(0, Number(e.target.value)); renderAll(); });
+    on('t-kw', 'change', (e) => { pushUndo(); tier.loadKw = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-pf', 'change', (e) => { pushUndo(); tier.powerFactor = Math.min(1, Math.max(0.1, Number(e.target.value) || 0.85)); renderAll(); });
+    on('t-eff', 'change', (e) => { pushUndo(); tier.efficiency = Math.min(1, Math.max(0.1, Number(e.target.value) || 0.93)); renderAll(); });
+    on('t-amps', 'change', (e) => { pushUndo(); tier.operatingCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
 
     on('t-template', 'change', (e) => {
       const tpl = project.deviceLibrary.find((x) => x.id === e.target.value);
       if (!tpl) return;
+      pushUndo();
       const c = window.SGCatalog.cloneTemplate(tpl);
       tier.templateId = c.id;
       tier.category = c.category;
+      tier.role = c.role || 'feeder';
+      tier.description = c.name;
       tier.ratedCurrentA = c.ratedCurrentA;
       tier.ratedLossW = c.ratedLossW;
       tier.fixedLossW = c.fixedLossW || 0;
@@ -827,6 +1183,7 @@
 
     on('t-up', 'click', () => {
       if (tierIdx <= 0) return;
+      pushUndo();
       const tmp = col.tiers[tierIdx - 1];
       col.tiers[tierIdx - 1] = col.tiers[tierIdx];
       col.tiers[tierIdx] = tmp;
@@ -835,6 +1192,7 @@
     });
     on('t-down', 'click', () => {
       if (tierIdx >= col.tiers.length - 1) return;
+      pushUndo();
       const tmp = col.tiers[tierIdx + 1];
       col.tiers[tierIdx + 1] = col.tiers[tierIdx];
       col.tiers[tierIdx] = tmp;
@@ -842,6 +1200,7 @@
       renderAll();
     });
     on('t-dup', 'click', () => {
+      pushUndo();
       const copy = JSON.parse(JSON.stringify(tier));
       copy.id = window.SGState.uid('tier');
       copy.tag = tier.tag + '-B';
@@ -850,6 +1209,7 @@
       renderAll();
     });
     on('t-del', 'click', () => {
+      pushUndo();
       col.tiers.splice(tierIdx, 1);
       selection = { type: 'column', colIndex: colIdx };
       renderAll();
@@ -857,6 +1217,7 @@
 
     container.querySelectorAll('[data-sc-field]').forEach((inp) => {
       inp.addEventListener('change', () => {
+        pushUndo();
         const sIdx = Number(inp.dataset.scIdx);
         const field = inp.dataset.scField;
         const sc = tier.subComponents[sIdx];
@@ -870,6 +1231,7 @@
 
     container.querySelectorAll('[data-sc-del]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        pushUndo();
         tier.subComponents.splice(Number(btn.dataset.scDel), 1);
         if (tier.subComponents.length === 0) tier.subComponents = null;
         renderAll();
@@ -877,11 +1239,13 @@
     });
 
     on('t-add-subcomp', 'click', () => {
+      pushUndo();
       tier.subComponents.push({ name: 'Aux / Component', ratedCurrentA: tier.ratedCurrentA, ratedLossW: 10, fixedLossW: 2 });
       renderAll();
     });
 
     on('t-convert-subcomp', 'click', () => {
+      pushUndo();
       tier.subComponents = [
         { name: tier.category + ' Main Poles', ratedCurrentA: tier.ratedCurrentA, ratedLossW: tier.ratedLossW, fixedLossW: 0 },
         { name: 'Control / Aux Coil', ratedCurrentA: tier.ratedCurrentA, ratedLossW: 0, fixedLossW: tier.fixedLossW || 5 },
@@ -890,7 +1254,7 @@
     });
   }
 
-  // --- TAB 3: Schedules & Audit View (Every Row & Box Clickable to Analyse) ---
+  // --- TAB 3: Schedules & Audit View ---
   function renderSchedulesView(evalRes, allScenarios) {
     const el = document.getElementById('schedules-container');
     const hr = evalRes.hbbRes;
@@ -898,7 +1262,6 @@
     const maxScenarioW = Math.max(100, ...allScenarios.map((s) => s.result.totals.grandTotalW));
 
     el.innerHTML = `
-      <!-- 1. 4-Scenario Comparison & Stacked Breakdown -->
       <div class="card">
         <h3>
           4-Scenario Heat Output Comparison (kW)
@@ -937,29 +1300,28 @@
         </div>
       </div>
 
-      <!-- 2. Main Busbar Joule Physics Audit -->
       <div class="card">
         <h3>
           Main Horizontal Busbar Physics Audit <span class="card-subtitle">${esc(bb.certRef)}</span>
           <button class="explain-chip" data-explain-hbb="1">Step-by-Step Derivation ↗</button>
         </h3>
         <div class="physics-grid">
-          <div class="physics-box explainable" data-explain-hbb="1" title="Click for step-by-step busbar derivation">
+          <div class="physics-box explainable" data-explain-hbb="1">
             <div class="p-lbl">Construction / Area</div>
             <div class="p-val">${bb.barsPerPhase} × ${bb.widthMm} × ${bb.thicknessMm} mm</div>
             <div class="p-note">${hr.areaMm2} mm² / phase · ${hr.material.shortName} · Rated ${bb.ratedCurrentA}A</div>
           </div>
-          <div class="physics-box explainable" data-explain-hbb="1" title="Click for temperature correction steps">
+          <div class="physics-box explainable" data-explain-hbb="1">
             <div class="p-lbl">DC Resistance (20°C → ${hr.tempC}°C)</div>
             <div class="p-val">${hr.rDc20_uOhmPerM.toFixed(2)} → ${hr.rDcT_uOhmPerM.toFixed(2)} µΩ/m</div>
             <div class="p-note">Temp factor ×${hr.tempFactor.toFixed(3)} · Click to inspect ↗</div>
           </div>
-          <div class="physics-box explainable" data-explain-hbb="1" title="Click for skin & proximity effect derivation">
+          <div class="physics-box explainable" data-explain-hbb="1">
             <div class="p-lbl">AC Conversion Factor (${hr.acFactorMode})</div>
             <div class="p-val">k_AC = ${hr.kAcUsed.toFixed(3)}</div>
             <div class="p-note">Calc: 1 + ${hr.ys.toFixed(3)} + ${hr.yp.toFixed(3)} + ${hr.ye.toFixed(2)} = ${hr.kAcCalculated.toFixed(3)} (δ=${hr.skinDepthMm.toFixed(1)}mm)</div>
           </div>
-          <div class="physics-box explainable" data-explain-hbb="1" title="Click for Joule W/m derivation">
+          <div class="physics-box explainable" data-explain-hbb="1">
             <div class="p-lbl">AC Resistance &amp; Rated W/m</div>
             <div class="p-val">${hr.rAcT_uOhmPerM.toFixed(2)} µΩ/m</div>
             <div class="p-note">At ${bb.ratedCurrentA}A (3-Ph): ${evalRes.hbbRatedWPerM.toFixed(1)} W/m · Analyse ↗</div>
@@ -967,7 +1329,6 @@
         </div>
       </div>
 
-      <!-- 3. Horizontal Busbar Segment Schedule -->
       <div class="card">
         <h3>Horizontal Busbar Segments (W/m &amp; Segment Losses) <span class="card-subtitle">Click any row to analyse its span length, current &amp; W/m derivation</span></h3>
         <table class="data-table">
@@ -990,7 +1351,7 @@
             ${evalRes.hbbSegments
               .map(
                 (s, sIdx) => `
-              <tr class="clickable" data-explain-hbb-seg="${sIdx}" title="Click to inspect calculation steps for this horizontal busbar span">
+              <tr class="clickable" data-explain-hbb-seg="${sIdx}">
                 <td>${esc(s.fromColName)}</td>
                 <td>${esc(s.toColName)}</td>
                 <td class="num">${s.lengthM.toFixed(2)}</td>
@@ -1023,7 +1384,6 @@
         </table>
       </div>
 
-      <!-- 4. Vertical Busbar Dropper Schedule -->
       <div class="card">
         <h3>Vertical Dropper Busbar Segments (Multi-Tier Take-Offs) <span class="card-subtitle">Click any row to analyse tapering current &amp; take-off length</span></h3>
         <table class="data-table">
@@ -1044,7 +1404,7 @@
             ${evalRes.vbbSegments
               .map(
                 (s, vIdx) => `
-              <tr class="clickable" data-explain-vbb-seg="${vIdx}" title="Click to inspect vertical dropper calculation steps">
+              <tr class="clickable" data-explain-vbb-seg="${vIdx}">
                 <td>${esc(s.colName)}</td>
                 <td>${esc(s.fromLabel)} → ${esc(s.toLabel)}</td>
                 <td class="num">+${s.takeoffElevationMm}</td>
@@ -1072,7 +1432,6 @@
         </table>
       </div>
 
-      <!-- 5. Protective Devices & Starters Schedule -->
       <div class="card">
         <h3>Protective Devices, Starters &amp; Interconnector Schedule <span class="card-subtitle">Click a row to edit in Inspector, or click "Analyse" for step-by-step calculation breakdown</span></h3>
         <table class="data-table">
@@ -1099,6 +1458,8 @@
                 const badgeCls =
                   r.role === 'interconnector'
                     ? 'status-interconn'
+                    : r.role === 'spacer'
+                    ? 'status-standby'
                     : r.status === 'future'
                     ? 'status-future'
                     : r.isActive
@@ -1110,10 +1471,10 @@
                     <td><strong>${esc(r.tag)}</strong></td>
                     <td>${esc(r.description)}</td>
                     <td>${esc(r.category)}</td>
-                    <td><span class="status-tag ${badgeCls}">${r.role === 'interconnector' ? (r.isActive ? 'N-1 TX' : 'IC IDLE') : r.status}</span></td>
-                    <td class="num">${r.ratedCurrentA}</td>
+                    <td><span class="status-tag ${badgeCls}">${r.role === 'interconnector' ? (r.isActive ? 'N-1 TX' : 'IC IDLE') : r.role === 'spacer' ? 'SPARE' : r.status}</span></td>
+                    <td class="num">${r.role === 'spacer' ? '—' : r.ratedCurrentA}</td>
                     <td class="num">${r.iOp.toFixed(1)}</td>
-                    <td class="num">${(r.loadRatio * r.loadRatio).toFixed(2)}</td>
+                    <td class="num">${r.role === 'spacer' ? '—' : (r.loadRatio * r.loadRatio).toFixed(2)}</td>
                     <td class="num">${r.fixedLossW.toFixed(1)}</td>
                     <td class="num">${r.varLossW.toFixed(1)}</td>
                     <td class="num">${(r.takeoffLossW + r.cableLossW).toFixed(1)}</td>
@@ -1139,7 +1500,6 @@
           <strong>Engineering Basis Note:</strong> Device variable losses are scaled using IEC TR 60890 Joule scaling
           <code>P_op = P_fixed + P_n × (I_op / I_n)²</code> (and IGBT load-curve approximation for VSDs).
           Board-level Rated Diversity Factor (RDF = ${(project.config.diversityFactorRDF * 100).toFixed(0)}%) is applied when summing local feeder currents onto vertical and horizontal busbars; N-1 interconnector transfer current is applied at 100%.
-          For certified temperature-rise compliance inside sealed enclosures, verify against manufacturer IEC 61439-1 / 60890 type-test limits.
         </div>
       </div>
     `;
@@ -1191,23 +1551,22 @@
           <button id="lib-add-btn" class="btn btn-sm btn-primary">+ New Custom Device Template</button>
         </h3>
         <div class="lib-typ-banner">
-          <span><strong>Typical 3P Losses @ In:</strong></span>
+          <span><strong>Typical 3-Phase Losses @ Rated Current (In):</strong></span>
+          <span>Eaton HRC Fuses (2A–1250A, DS 10164): 16NHG0B = 3W/link (9W 3P) · 250NHG1B = 19W/link (57W 3P) · 1250NHG4G = 108W/link (324W 3P)</span>
           <span>ACB 1600A: ~260W + 15W aux</span>
-          <span>ACB 2500A: ~480W + 18W aux</span>
-          <span>MCCB 250A: ~42W (~14W/pole)</span>
-          <span>MCCB 400A: ~66W (~22W/pole)</span>
-          <span>DOL 37kW: ~55W var + 18W coil/aux</span>
-          <span>VSD: ~2.5–3.5% of rated kW + 35–80W fan</span>
+          <span>MCCB 400A: ~66W</span>
+          <span>DOL 37kW: ~55W + 18W coil</span>
+          <span>VSD: ~2.5–3.5% kW</span>
         </div>
         <table class="data-table">
           <thead>
             <tr>
-              <th>Category <span class="field-hint" style="display:block;text-transform:none;">Ex: ACB, MCCB, DOL</span></th>
-              <th>Template Name <span class="field-hint" style="display:block;text-transform:none;">Ex: MCCB 250A (3P)</span></th>
-              <th class="num">Rated In (A) <span class="field-hint" style="display:block;text-transform:none;">Typ: 25–3200</span></th>
-              <th class="num">Rated Loss Pn (W) <span class="field-hint" style="display:block;text-transform:none;">3P loss @ In</span></th>
-              <th class="num">Fixed Loss (W) <span class="field-hint" style="display:block;text-transform:none;">Coil / Trip / Fan</span></th>
-              <th class="num">Height (mm) <span class="field-hint" style="display:block;text-transform:none;">Typ: 200–800</span></th>
+              <th>Category</th>
+              <th>Template Name</th>
+              <th class="num"><span class="help-label" data-help="tier.in">Rated In (A)</span></th>
+              <th class="num"><span class="help-label" data-help="tier.pn">Rated Pn (W)</span></th>
+              <th class="num"><span class="help-label" data-help="tier.pfix">Fixed (W)</span></th>
+              <th class="num"><span class="help-label" data-help="tier.height">Height (mm)</span></th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -1233,14 +1592,13 @@
 
     el.querySelectorAll('[data-lib-field]').forEach((inp) => {
       inp.addEventListener('change', () => {
+        pushUndo();
         const idx = Number(inp.dataset.libIdx);
         const f = inp.dataset.libField;
         const item = project.deviceLibrary[idx];
         if (!item) return;
         item[f] = f === 'name' || f === 'category' ? inp.value : Number(inp.value) || 0;
-        if (f === 'ratedLossW' && item.subComponents) {
-          item.subComponents = null;
-        }
+        if (f === 'ratedLossW' && item.subComponents) item.subComponents = null;
         window.SGState.saveProject(project);
       });
     });
@@ -1248,12 +1606,14 @@
     el.querySelectorAll('[data-lib-del]').forEach((btn) => {
       btn.addEventListener('click', () => {
         if (project.deviceLibrary.length <= 1) return;
+        pushUndo();
         project.deviceLibrary.splice(Number(btn.dataset.libDel), 1);
         renderAll();
       });
     });
 
     document.getElementById('lib-add-btn').addEventListener('click', () => {
+      pushUndo();
       project.deviceLibrary.unshift({
         id: window.SGState.uid('tpl'),
         category: 'MCCB',
@@ -1269,7 +1629,7 @@
     });
   }
 
-  // --- TAB 5: Global Board & Standards Config (Every Field With Typical Values) ---
+  // --- TAB 5: Global Board & Standards Config ---
   function renderConfigView() {
     const el = document.getElementById('config-container');
     const c = project.config;
@@ -1280,24 +1640,24 @@
         <h3>Project Metadata</h3>
         <div class="form-grid">
           <div class="field">
-            <label>Project / Switchboard Name</label>
+            ${lbl('Project / Switchboard Name', 'cfg.projName')}
             <input type="text" id="cfg-proj-name" value="${esc(m.projectName)}" placeholder="e.g. MSB-A — Main LV Switchboard" />
             <span class="field-hint">Ex: MSB-A — Main LV Switchboard (Firm Supply A)</span>
           </div>
           <div class="field">
-            <label>Document / Calc Reference</label>
+            ${lbl('Document / Calc Reference', 'cfg.projNum')}
             <input type="text" id="cfg-proj-num" value="${esc(m.projectNumber)}" placeholder="e.g. CEI-TH-001" />
-            <span class="field-hint">Used in PDF header &amp; exported file names</span>
+            <span class="field-hint">Used in PDF header &amp; exported filenames</span>
           </div>
           <div class="field">
-            <label>Engineer</label>
+            ${lbl('Engineer', 'cfg.eng')}
             <input type="text" id="cfg-eng" value="${esc(m.engineer)}" placeholder="e.g. CE&I Engineering" />
             <span class="field-hint">Author shown on printed calculation sheet</span>
           </div>
           <div class="field">
-            <label>Revision</label>
+            ${lbl('Revision', 'cfg.rev')}
             <input type="text" id="cfg-rev" value="${esc(m.revision)}" placeholder="e.g. Rev A / P01" />
-            <span class="field-hint">Ex: Rev A (Preliminary), Rev C01 (For Construction)</span>
+            <span class="field-hint">Ex: Rev A (Preliminary), Rev C01 (Construction)</span>
           </div>
         </div>
       </div>
@@ -1306,12 +1666,12 @@
         <h3>Electrical System &amp; IEC 61439 Diversity Basis</h3>
         <div class="form-grid-3">
           <div class="field">
-            <label>System Voltage V_LL (V)</label>
+            ${lbl('System Voltage V_LL (V)', 'cfg.v')}
             <input type="number" id="cfg-v" value="${c.voltageV}" step="5" placeholder="400" />
-            <span class="field-hint">Typ: 400 V (IEC/EU) or 415 V (UK legacy)</span>
+            <span class="field-hint">Typ: 400 V (IEC/EU) or 415 V (UK)</span>
           </div>
           <div class="field">
-            <label>Frequency (Hz)</label>
+            ${lbl('Frequency (Hz)', 'cfg.f')}
             <select id="cfg-f">
               <option value="50" ${c.frequencyHz === 50 ? 'selected' : ''}>50 Hz (IEC / UK / EU)</option>
               <option value="60" ${c.frequencyHz === 60 ? 'selected' : ''}>60 Hz</option>
@@ -1319,7 +1679,7 @@
             <span class="field-hint">Drives AC skin depth δ (~10.2 mm @ 50Hz Cu)</span>
           </div>
           <div class="field">
-            <label>System Poles</label>
+            ${lbl('System Poles', 'cfg.poles')}
             <select id="cfg-poles">
               <option value="3P+N" ${c.poles === '3P+N' ? 'selected' : ''}>3P+N (4-Wire)</option>
               <option value="3P" ${c.poles === '3P' ? 'selected' : ''}>3P (3-Wire)</option>
@@ -1327,19 +1687,19 @@
             <span class="field-hint">Typ: 3P+N for mixed sub-DB &amp; MCC boards</span>
           </div>
           <div class="field">
-            <label>Neutral Current Ratio (I_N / I_ph)</label>
+            ${lbl('Neutral Current Ratio (I_N / I_ph)', 'cfg.nratio')}
             <input type="number" id="cfg-nratio" value="${c.neutralCurrentRatio}" min="0" max="1" step="0.05" placeholder="0.10" />
-            <span class="field-hint">Typ: 0.00 balanced motors, 0.10–0.25 commercial/VSDs</span>
+            <span class="field-hint">Typ: 0.00 motors, 0.10–0.25 commercial/VSDs</span>
           </div>
           <div class="field">
-            <label>Board Diversity Factor (RDF)</label>
+            ${lbl('Board Diversity Factor (RDF)', 'cfg.rdf')}
             <input type="number" id="cfg-rdf" value="${c.diversityFactorRDF}" min="0.3" max="1.0" step="0.05" placeholder="0.90" />
-            <span class="field-hint">IEC 61439 Table 101 typ: 0.8–0.9 (4–9 circuits), 1.0 worst-case</span>
+            <span class="field-hint">IEC 61439 Table 101 typ: 0.8–0.9, 1.0 worst-case</span>
           </div>
           <div class="field">
-            <label>Global Future Load Growth (%)</label>
+            ${lbl('Global Future Load Growth (%)', 'cfg.growth')}
             <input type="number" id="cfg-growth" value="${c.globalFutureGrowthPct}" min="0" max="100" step="5" placeholder="15" />
-            <span class="field-hint">Typ: 15–25% growth applied in Future scenarios</span>
+            <span class="field-hint">Typ: 15–25% growth in Future scenarios</span>
           </div>
         </div>
       </div>
@@ -1348,55 +1708,55 @@
         <h3>General Arrangement Dimensions, Joints &amp; Auxiliaries</h3>
         <div class="form-grid-3">
           <div class="field">
-            <label>Panel Height (mm)</label>
+            ${lbl('Panel Height (mm)', 'cfg.h')}
             <input type="number" id="cfg-h" value="${c.panelHeightMm}" min="1400" max="2600" step="50" placeholder="2200" />
-            <span class="field-hint">Typ: 2000–2200 mm standard LV switchboard</span>
+            <span class="field-hint">Typ: 2000–2200 mm LV switchboard</span>
           </div>
           <div class="field">
-            <label>Panel Depth (mm)</label>
+            ${lbl('Panel Depth (mm)', 'cfg.d')}
             <input type="number" id="cfg-d" value="${c.panelDepthMm}" min="400" max="1600" step="50" placeholder="800" />
-            <span class="field-hint">Typ: 600–1000 mm (drives cooling area Ae)</span>
+            <span class="field-hint">Typ: 600–1000 mm (drives cooling Ae)</span>
           </div>
           <div class="field">
-            <label>HBB Chamber Height (mm)</label>
+            ${lbl('HBB Chamber Height (mm)', 'cfg.hbbh')}
             <input type="number" id="cfg-hbbh" value="${c.hbbChamberHeightMm}" min="200" max="600" step="25" placeholder="350" />
-            <span class="field-hint">Typ: 300–450 mm top/bottom busbar chamber</span>
+            <span class="field-hint">Typ: 300–450 mm busbar chamber</span>
           </div>
           <div class="field">
-            <label>Horizontal Busbar Position</label>
+            ${lbl('Horizontal Busbar Position', 'cfg.hbbpos')}
             <select id="cfg-hbbpos">
               <option value="top" ${c.hbbPosition === 'top' ? 'selected' : ''}>Top Busbar Chamber</option>
               <option value="bottom" ${c.hbbPosition === 'bottom' ? 'selected' : ''}>Bottom Busbar Chamber</option>
             </select>
-            <span class="field-hint">Changes vertical dropper lengths to each tier</span>
+            <span class="field-hint">Updates vertical dropper lengths to tiers</span>
           </div>
           <div class="field">
-            <label>Take-off Tail Length / Tier (m)</label>
+            ${lbl('Take-off Tail Length / Tier (m)', 'cfg.tail')}
             <input type="number" id="cfg-tail" value="${c.takeoffTailLengthM}" min="0" max="2" step="0.05" placeholder="0.35" />
-            <span class="field-hint">Typ: 0.25–0.50 m copper link from dropper to breaker</span>
+            <span class="field-hint">Typ: 0.25–0.50 m copper link to breaker</span>
           </div>
           <div class="field">
-            <label>Bolted Joint Resistance (µΩ)</label>
+            ${lbl('Bolted Joint Resistance (µΩ)', 'cfg.joint')}
             <input type="number" id="cfg-joint" value="${c.jointResistanceUOhm}" min="0" max="30" step="1" placeholder="5" />
-            <span class="field-hint">Typ: 3–10 µΩ per torqued Cu-Cu lap joint</span>
+            <span class="field-hint">Typ: 3–10 µΩ per torqued Cu-Cu joint</span>
           </div>
           <div class="field">
-            <label>Panel Auxiliary Losses (W)</label>
+            ${lbl('Panel Auxiliary Losses (W)', 'cfg.aux')}
             <input type="number" id="cfg-aux" value="${c.auxiliaryLossesW}" min="0" step="10" placeholder="120" />
-            <span class="field-hint">Typ: 80–250 W (meters, PSU, PLC, door lamps)</span>
+            <span class="field-hint">Typ: 80–250 W (meters, PSU, PLC, lamps)</span>
           </div>
           <div class="field">
-            <label>Installation Type (IEC 60890 Ae)</label>
+            ${lbl('Installation Type (IEC 60890 Ae)', 'cfg.inst')}
             <select id="cfg-inst">
               <option value="freestanding" ${c.installationType !== 'wall_backed' ? 'selected' : ''}>Freestanding (Front + Rear exposed)</option>
               <option value="wall_backed" ${c.installationType === 'wall_backed' ? 'selected' : ''}>Wall-Backed (Rear blocked)</option>
             </select>
-            <span class="field-hint">Determines effective enclosure surface area Ae</span>
+            <span class="field-hint">Sets effective enclosure surface area Ae</span>
           </div>
           <div class="field">
-            <label>HVAC Safety Margin (%)</label>
+            ${lbl('HVAC Safety Margin (%)', 'cfg.hvac')}
             <input type="number" id="cfg-hvac" value="${c.hvacSafetyMarginPct}" min="0" max="50" step="5" placeholder="15" />
-            <span class="field-hint">Typ: 15–25% contingency for switchroom cooling</span>
+            <span class="field-hint">Typ: 15–25% contingency for HVAC cooling</span>
           </div>
         </div>
       </div>
@@ -1404,7 +1764,7 @@
 
     const bind = (id, fn) => {
       const inp = document.getElementById(id);
-      if (inp) inp.addEventListener('change', () => { fn(inp.value); renderAll(); });
+      if (inp) inp.addEventListener('change', () => { pushUndo(); fn(inp.value); renderAll(); });
     };
 
     bind('cfg-proj-name', (v) => (m.projectName = v));
@@ -1428,8 +1788,31 @@
     bind('cfg-hvac', (v) => (c.hvacSafetyMarginPct = Math.max(0, Number(v) || 0)));
   }
 
+  // --- Theme Persistence & Switcher ---
+  const THEME_KEY = 'sg_heat_calc_theme_v1';
+  function applyTheme(themeId) {
+    const t = themeId || 'dark';
+    document.documentElement.dataset.theme = t;
+    const sel = document.getElementById('theme-select');
+    if (sel) sel.value = t;
+    try {
+      localStorage.setItem(THEME_KEY, t);
+    } catch (e) {}
+  }
+
   // --- Wire Static Shell Controls ---
   function initControls() {
+    // Load saved theme
+    let savedTheme = 'dark';
+    try {
+      savedTheme = localStorage.getItem(THEME_KEY) || 'dark';
+    } catch (e) {}
+    applyTheme(savedTheme);
+
+    document.getElementById('theme-select').addEventListener('change', (e) => {
+      applyTheme(e.target.value);
+      renderAll(true);
+    });
     document.querySelectorAll('.tab-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         activeTab = btn.dataset.tab;
@@ -1439,9 +1822,19 @@
       });
     });
 
+    // Undo button & Ctrl+Z
+    document.getElementById('btn-undo').addEventListener('click', performUndo);
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        performUndo();
+      }
+    });
+
     document.getElementById('preset-select').addEventListener('change', (e) => {
       const v = e.target.value;
       if (!v) return;
+      pushUndo();
       if (v === 'default') project = window.SGState.createDefaultProject();
       else if (v === 'dual') project = window.SGState.createDualIncomerProject();
       else if (v === 'blank') project = window.SGState.createBlankProject();
@@ -1450,7 +1843,9 @@
       renderAll();
     });
 
+    // SLD toolbar buttons & zoom
     document.getElementById('sld-add-col').addEventListener('click', () => addNewColumn('feeders'));
+    document.getElementById('sld-add-spare-col').addEventListener('click', () => addNewColumn('spare'));
     document.getElementById('sld-add-inc').addEventListener('click', () => addNewColumn('incomer'));
     document.getElementById('sld-add-coupler').addEventListener('click', () => addNewColumn('coupler'));
     document.getElementById('sld-add-interconn').addEventListener('click', () => addNewColumn('interconnector'));
@@ -1461,7 +1856,22 @@
     document.getElementById('sld-export-svg').addEventListener('click', () => {
       window.SGReport.exportSVG('sld-svg', `${project.meta.projectNumber || 'switchgear'}_SLD.svg`);
     });
+    document.getElementById('sld-zoom-in').addEventListener('click', () => setZoom('sld', sldZoom + 0.15));
+    document.getElementById('sld-zoom-out').addEventListener('click', () => setZoom('sld', sldZoom - 0.15));
+    document.getElementById('sld-zoom-fit').addEventListener('click', () => fitZoom('sld'));
+    document.getElementById('sld-zoom-reset').addEventListener('click', () => setZoom('sld', 1.0));
+    document.getElementById('sld-container').addEventListener(
+      'wheel',
+      (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          setZoom('sld', sldZoom + (e.deltaY < 0 ? 0.1 : -0.1));
+        }
+      },
+      { passive: false }
+    );
 
+    // GA toolbar buttons & zoom
     document.getElementById('ga-opt-heatmap').addEventListener('change', (e) => {
       gaOptions.showHeatmap = e.target.checked;
       renderAll(true);
@@ -1474,10 +1884,26 @@
       gaOptions.showBusbars = e.target.checked;
       renderAll(true);
     });
+    document.getElementById('ga-add-spare-col').addEventListener('click', () => addNewColumn('spare'));
     document.getElementById('ga-export-svg').addEventListener('click', () => {
       window.SGReport.exportSVG('ga-svg', `${project.meta.projectNumber || 'switchgear'}_GA.svg`);
     });
+    document.getElementById('ga-zoom-in').addEventListener('click', () => setZoom('ga', gaZoom + 0.15));
+    document.getElementById('ga-zoom-out').addEventListener('click', () => setZoom('ga', gaZoom - 0.15));
+    document.getElementById('ga-zoom-fit').addEventListener('click', () => fitZoom('ga'));
+    document.getElementById('ga-zoom-reset').addEventListener('click', () => setZoom('ga', 1.0));
+    document.getElementById('ga-container').addEventListener(
+      'wheel',
+      (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          setZoom('ga', gaZoom + (e.deltaY < 0 ? 0.1 : -0.1));
+        }
+      },
+      { passive: false }
+    );
 
+    // File Save / Load / Share / Export / Print
     document.getElementById('btn-save-json').addEventListener('click', () => window.SGReport.exportJSON(project));
     document.getElementById('btn-load-json').addEventListener('click', () => document.getElementById('file-load-json').click());
     document.getElementById('file-load-json').addEventListener('change', (e) => {
@@ -1488,6 +1914,7 @@
         try {
           const parsed = JSON.parse(reader.result);
           if (parsed && parsed.columns && parsed.mainBusbar) {
+            pushUndo();
             project = parsed;
             selection = { type: 'mainBusbar' };
             renderAll();
@@ -1502,7 +1929,6 @@
       e.target.value = '';
     });
 
-    // Shareable Web URL (#data=...) for hosted deployments
     document.getElementById('btn-share-link').addEventListener('click', () => {
       const btn = document.getElementById('btn-share-link');
       try {

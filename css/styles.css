@@ -15,8 +15,98 @@
   --danger: #ef4444;
   --ok: #22c55e;
   --purple: #a855f7;
+  --tooltip-bg: #0c1528;
+  --math-text: #fde68a;
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+}
+
+/* Theme 2: Engineering Daylight (Clean Light CAD Paper) */
+[data-theme="light"] {
+  --bg-0: #edf2f7;
+  --bg-1: #ffffff;
+  --bg-2: #f8fafc;
+  --bg-3: #e2e8f0;
+  --border: #cbd5e1;
+  --border-strong: #94a3b8;
+  --text-0: #0f172a;
+  --text-1: #334155;
+  --text-2: #64748b;
+  --accent: #0284c7;
+  --accent-dim: rgba(2, 132, 199, 0.12);
+  --warm: #b45309;
+  --hot: #c2410c;
+  --danger: #dc2626;
+  --ok: #15803d;
+  --purple: #7e22ce;
+  --tooltip-bg: #ffffff;
+  --math-text: #0369a1;
+}
+
+/* Theme 3: Blueprint Steel (Technical Navy & Ice Blue) */
+[data-theme="blueprint"] {
+  --bg-0: #041226;
+  --bg-1: #081c38;
+  --bg-2: #0d274d;
+  --bg-3: #143666;
+  --border: #1e4b85;
+  --border-strong: #3272c2;
+  --text-0: #f0f9ff;
+  --text-1: #bae6fd;
+  --text-2: #7dd3fc;
+  --accent: #38bdf8;
+  --accent-dim: rgba(56, 189, 248, 0.18);
+  --warm: #fbbf24;
+  --hot: #fb923c;
+  --danger: #f87171;
+  --ok: #34d399;
+  --purple: #c084fc;
+  --tooltip-bg: #071933;
+  --math-text: #fde68a;
+}
+
+/* Theme 4: Warm Slate (Low-Glare Charcoal & Copper) */
+[data-theme="slate"] {
+  --bg-0: #141312;
+  --bg-1: #1c1a18;
+  --bg-2: #25221f;
+  --bg-3: #332e29;
+  --border: #3f3932;
+  --border-strong: #5c5349;
+  --text-0: #fafaf9;
+  --text-1: #d6d3d1;
+  --text-2: #a8a29e;
+  --accent: #f59e0b;
+  --accent-dim: rgba(245, 158, 11, 0.15);
+  --warm: #fb923c;
+  --hot: #ea580c;
+  --danger: #ef4444;
+  --ok: #22c55e;
+  --purple: #c084fc;
+  --tooltip-bg: #1c1917;
+  --math-text: #fed7aa;
+}
+
+[data-theme="light"] .kpi-card.hero .kpi-value,
+[data-theme="light"] .modal-result-banner .m-val {
+  color: #b45309;
+}
+
+[data-theme="light"] .scenario-pill .sc-kw {
+  background: #e2e8f0;
+  color: #b45309;
+}
+
+[data-theme="light"] .btn:hover {
+  background: #cbd5e1;
+}
+
+[data-theme="light"] .btn-primary:hover {
+  background: #0369a1;
+}
+
+[data-theme="light"] .btn-danger {
+  color: #b91c1c;
 }
 
 * {
@@ -380,7 +470,219 @@ input:focus, select:focus, textarea:focus {
   border-radius: 8px;
   border: 1px solid var(--border);
   display: block;
-  min-width: 820px;
+  user-select: none;
+}
+
+.pan-bg {
+  cursor: grab;
+}
+
+.diagram-container.panning,
+.diagram-container.panning .pan-bg {
+  cursor: grabbing;
+}
+
+.draggable-item {
+  cursor: grab;
+}
+
+.draggable-item:active {
+  cursor: grabbing;
+}
+
+.quick-del-btn {
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+}
+
+.quick-del-btn:hover {
+  opacity: 1;
+}
+
+.drop-col-zone.drop-hover > .col-bg-rect {
+  stroke: #38bdf8 !important;
+  stroke-width: 2.5px !important;
+  fill: rgba(56, 189, 248, 0.14) !important;
+}
+
+/* Zoom Controls */
+.zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
+}
+
+.zoom-controls .btn-sm {
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+.zoom-pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Floating Drag Ghost & Drop Indicator */
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 2000;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(12, 74, 110, 0.95);
+  border: 1.5px solid #38bdf8;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  transform: translate(12px, 12px);
+  display: none;
+}
+
+.drag-ghost.active {
+  display: block;
+}
+
+.drop-insert-line {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1999;
+  height: 3px;
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.9);
+  border-radius: 2px;
+  display: none;
+}
+
+.drop-insert-line.active {
+  display: block;
+}
+
+/* Rich Hover Engineering Help Tooltip */
+.help-label {
+  cursor: help;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px dotted rgba(148, 163, 184, 0.55);
+  width: fit-content;
+}
+
+.help-label:hover {
+  color: var(--accent) !important;
+  border-bottom-color: var(--accent);
+}
+
+.help-label::after {
+  content: '?';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.16);
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.sg-help-tooltip {
+  position: fixed;
+  z-index: 3000;
+  width: 350px;
+  max-width: calc(100vw - 24px);
+  background: var(--tooltip-bg);
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  padding: 11px 13px;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.45);
+  color: var(--text-1);
+  font-size: 11.5px;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.sg-help-tooltip.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.sg-help-tooltip .ht-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-0);
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sg-help-tooltip .ht-row {
+  margin-bottom: 5px;
+}
+
+.sg-help-tooltip .ht-k {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.sg-help-tooltip .ht-typ {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--warm);
+}
+
+.sg-help-tooltip .ht-tip {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* Editable Inputs Inside Calculation Breakdown Modal */
+.explain-edit-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.explain-inline-input {
+  background: var(--bg-0);
+  border: 1.5px solid var(--accent);
+  color: var(--text-0);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  width: 105px;
+}
+
+select.explain-inline-input {
+  width: auto;
+  max-width: 210px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+.explain-unit {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
 }
 
 .clickable {
@@ -946,7 +1248,7 @@ input:focus, select:focus, textarea:focus {
 .step-math {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: #fde68a;
+  color: var(--math-text);
   background: var(--bg-0);
   padding: 5px 8px;
   border-radius: 4px;
@@ -985,15 +1287,34 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
-/* Print / PDF Engineering Report Styles */
+/* Print / PDF Engineering Report Styles (Multi-Page Safe) */
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 10mm 12mm;
+  }
   html, body {
-    background: #fff !important;
+    background: #ffffff !important;
     color: #0f172a !important;
     height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .app-shell {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
     overflow: visible !important;
   }
   .app-shell > :not(.print-only) {
+    display: none !important;
+  }
+  .modal-overlay,
+  .sg-help-tooltip,
+  .drag-ghost,
+  .drop-insert-line {
     display: none !important;
   }
   .print-only {
@@ -1001,6 +1322,7 @@ input:focus, select:focus, textarea:focus {
     padding: 0;
     color: #0f172a;
     font-family: 'Segoe UI', Arial, sans-serif;
+    overflow: visible !important;
   }
   .print-header {
     border-bottom: 2px solid #0f172a;
@@ -1011,22 +1333,38 @@ input:focus, select:focus, textarea:focus {
   }
   .print-header h1 {
     margin: 0;
-    font-size: 18px;
+    font-size: 17px;
   }
   .print-section {
     margin-bottom: 16px;
-    page-break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .print-section.print-page-break {
+    break-before: page;
+    page-break-before: always;
   }
   .print-section h2 {
-    font-size: 13.5px;
+    font-size: 13px;
     border-bottom: 1px solid #cbd5e1;
     padding-bottom: 3px;
     margin: 0 0 8px 0;
+    break-after: avoid;
+    page-break-after: avoid;
   }
   .print-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 10.5px;
+    font-size: 9.8px;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .print-table thead {
+    display: table-header-group;
+  }
+  .print-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .print-table th, .print-table td {
     border: 1px solid #cbd5e1;
@@ -1034,15 +1372,23 @@ input:focus, select:focus, textarea:focus {
     text-align: left;
   }
   .print-table th {
-    background: #f1f5f9;
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
   }
   .print-table td.num, .print-table th.num {
     text-align: right;
     font-family: Consolas, monospace;
   }
+  .print-diagram-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
   .print-svg-wrap svg {
-    max-width: 100%;
-    height: auto;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: 155mm !important;
     border: 1px solid #94a3b8;
+    border-radius: 4px;
   }
 }

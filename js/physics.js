@@ -356,9 +356,12 @@ window.SGPhysics = (function () {
         else if (tier.status === 'future' && includeFuture) isActive = true;
         else if (tier.status === 'standby') isActive = false;
 
-        // Special handling for Interconnector feeder
+        // Special handling for Interconnector feeder & Spacer/Placeholder bays
         let iOp = 0;
-        if (tier.role === 'interconnector') {
+        if (tier.role === 'spacer') {
+          isActive = tier.status !== 'standby' && (Number(tier.fixedLossW) || 0) > 0;
+          iOp = 0;
+        } else if (tier.role === 'interconnector') {
           if (isN1Transfer) {
             isActive = true;
             iOp = Math.max(0, Number(tier.n1TransferCurrentA) || 0);
@@ -385,7 +388,7 @@ window.SGPhysics = (function () {
 
         // Take-off tail + bolted joint loss for outgoing feeders & interconnectors
         let takeoffLossW = 0;
-        if (isActive && iOp > 0 && tier.role !== 'incomer' && tier.role !== 'bus_coupler') {
+        if (isActive && iOp > 0 && tier.role !== 'incomer' && tier.role !== 'bus_coupler' && tier.role !== 'spacer') {
           // Take-off links sized roughly to column vertical busbar or feeder rating
           const takeoffRes = calcBusbarResistance(
             tier.takeoffBusbar || vbbSpec,

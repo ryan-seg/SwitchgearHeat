@@ -23,6 +23,13 @@
       </div>
 
       <div class="topbar-actions">
+        <button id="btn-undo" class="btn btn-secondary" title="Undo last change (Ctrl+Z)" disabled>↶ Undo</button>
+        <select id="theme-select" class="input-compact" title="Switch colour theme">
+          <option value="dark">Theme: Midnight CAD</option>
+          <option value="light">Theme: Engineering Daylight</option>
+          <option value="blueprint">Theme: Blueprint Steel</option>
+          <option value="slate">Theme: Warm Slate</option>
+        </select>
         <select id="preset-select" class="input-compact" title="Load switchboard preset">
           <option value="">Load Preset…</option>
           <option value="default">MSB-A Demo (2×75×6mm + Interconnector)</option>
@@ -52,10 +59,10 @@
     <main class="workspace">
       <section class="main-stage">
         <div class="stage-tabs">
-          <button class="tab-btn active" data-tab="sld">1. Single Line Diagram (SLD)</button>
-          <button class="tab-btn" data-tab="ga">2. General Arrangement (GA)</button>
+          <button class="tab-btn active" data-tab="sld" data-help="ui.sld">1. Single Line Diagram (SLD)</button>
+          <button class="tab-btn" data-tab="ga" data-help="ui.ga">2. General Arrangement (GA)</button>
           <button class="tab-btn" data-tab="schedules">3. Heat Loss Schedules &amp; Audit</button>
-          <button class="tab-btn" data-tab="library">4. Device &amp; Starter Library</button>
+          <button class="tab-btn" data-tab="library">4. Device, Fuse &amp; Starter Library</button>
           <button class="tab-btn" data-tab="config">5. Board &amp; Standards Config</button>
         </div>
 
@@ -64,13 +71,22 @@
           <div class="canvas-toolbar">
             <div class="toolbar-group">
               <button id="sld-add-col" class="btn btn-sm btn-primary">+ Feeder Col</button>
+              <button id="sld-add-spare-col" class="btn btn-sm btn-secondary">+ Spare Col</button>
               <button id="sld-add-inc" class="btn btn-sm btn-secondary">+ Incomer</button>
-              <button id="sld-add-coupler" class="btn btn-sm btn-secondary">+ Bus Coupler</button>
-              <button id="sld-add-interconn" class="btn btn-sm btn-secondary">+ Interconnector</button>
-              <button id="sld-select-hbb" class="btn btn-sm btn-secondary">Edit Main Busbar</button>
-              <button id="sld-export-svg" class="btn btn-sm btn-secondary">Export SLD SVG</button>
+              <button id="sld-add-coupler" class="btn btn-sm btn-secondary">+ Coupler</button>
+              <button id="sld-add-interconn" class="btn btn-sm btn-secondary">+ Interconn</button>
+              <button id="sld-select-hbb" class="btn btn-sm btn-secondary">Main Busbar</button>
+              <button id="sld-export-svg" class="btn btn-sm btn-secondary">Export SVG</button>
             </div>
-            <div class="toolbar-hint">Click any busbar, column, incomer, coupler, or feeder on the diagram to edit live parameters.</div>
+            <div class="toolbar-group">
+              <div class="zoom-controls" title="Zoom SLD (also Ctrl + Mouse Wheel)">
+                <button id="sld-zoom-out" class="btn btn-sm btn-secondary" title="Zoom Out">−</button>
+                <span id="sld-zoom-pct" class="zoom-pct">100%</span>
+                <button id="sld-zoom-in" class="btn btn-sm btn-secondary" title="Zoom In">+</button>
+                <button id="sld-zoom-fit" class="btn btn-sm btn-secondary" title="Fit to View">Fit</button>
+                <button id="sld-zoom-reset" class="btn btn-sm btn-secondary" title="Reset 100%">1:1</button>
+              </div>
+            </div>
           </div>
           <div id="sld-container" class="diagram-container"></div>
         </div>
@@ -79,12 +95,21 @@
         <div id="tab-ga" class="tab-panel">
           <div class="canvas-toolbar">
             <div class="toolbar-group">
-              <label class="toggle-chip"><input type="checkbox" id="ga-opt-heatmap" checked /> Thermal Heatmap</label>
-              <label class="toggle-chip"><input type="checkbox" id="ga-opt-dims" checked /> Dimensions &amp; Take-off EL</label>
-              <label class="toggle-chip"><input type="checkbox" id="ga-opt-busbars" checked /> Busbar Paths (W/m)</label>
-              <button id="ga-export-svg" class="btn btn-sm btn-secondary">Export GA SVG</button>
+              <label class="toggle-chip"><input type="checkbox" id="ga-opt-heatmap" checked /> Heatmap</label>
+              <label class="toggle-chip"><input type="checkbox" id="ga-opt-dims" checked /> Dimensions &amp; EL</label>
+              <label class="toggle-chip"><input type="checkbox" id="ga-opt-busbars" checked /> Busbars (W/m)</label>
+              <button id="ga-add-spare-col" class="btn btn-sm btn-secondary">+ Spare Col</button>
+              <button id="ga-export-svg" class="btn btn-sm btn-secondary">Export SVG</button>
             </div>
-            <div class="toolbar-hint">Auto-generated to scale from column widths &amp; tier heights — drives all busbar lengths.</div>
+            <div class="toolbar-group">
+              <div class="zoom-controls" title="Zoom GA (also Ctrl + Mouse Wheel)">
+                <button id="ga-zoom-out" class="btn btn-sm btn-secondary" title="Zoom Out">−</button>
+                <span id="ga-zoom-pct" class="zoom-pct">100%</span>
+                <button id="ga-zoom-in" class="btn btn-sm btn-secondary" title="Zoom In">+</button>
+                <button id="ga-zoom-fit" class="btn btn-sm btn-secondary" title="Fit to View">Fit</button>
+                <button id="ga-zoom-reset" class="btn btn-sm btn-secondary" title="Reset 100%">1:1</button>
+              </div>
+            </div>
           </div>
           <div id="ga-container" class="diagram-container"></div>
         </div>
@@ -127,6 +152,7 @@
   <script src="./js/sld.js"></script>
   <script src="./js/ga.js"></script>
   <script src="./js/explain.js"></script>
+  <script src="./js/help.js"></script>
   <script src="./js/report.js"></script>
   <script src="./js/app.js"></script>
 </body>

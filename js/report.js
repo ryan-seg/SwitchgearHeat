@@ -147,8 +147,9 @@ window.SGReport = (function () {
     const bb = project.mainBusbar;
     const hr = evalRes.hbbRes;
     const t = evalRes.totals;
-    const sldSvg = window.SGSLD.renderSLD(project, evalRes, null);
-    const gaSvg = window.SGGA.renderGA(project, evalRes, null, { showHeatmap: true, showDimensions: true, showBusbars: true });
+    // Always render print diagrams in crisp light CAD palette so they print cleanly on white paper
+    const sldSvg = window.SGSLD.renderSLD(project, evalRes, null, 1.0, 'light');
+    const gaSvg = window.SGGA.renderGA(project, evalRes, null, { showHeatmap: true, showDimensions: true, showBusbars: true }, 1.0, 'light');
 
     return `
       <div class="print-header">
@@ -213,17 +214,17 @@ window.SGReport = (function () {
         </p>
       </div>
 
-      <div class="print-section">
+      <div class="print-section print-page-break print-diagram-block">
         <h2>3. Single Line Diagram (SLD)</h2>
         <div class="print-svg-wrap">${sldSvg}</div>
       </div>
 
-      <div class="print-section">
+      <div class="print-section print-page-break print-diagram-block">
         <h2>4. General Arrangement (GA Elevation &amp; Take-Offs)</h2>
         <div class="print-svg-wrap">${gaSvg}</div>
       </div>
 
-      <div class="print-section">
+      <div class="print-section print-page-break">
         <h2>5. Horizontal &amp; Vertical Busbar Segment Losses</h2>
         <table class="print-table">
           <thead>
