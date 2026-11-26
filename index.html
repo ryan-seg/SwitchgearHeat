@@ -9,9 +9,9 @@
   <meta name="description" content="IEC 60439 / 61439 LV Switchgear Thermal & Heat Loss Calculator with Joule busbar physics, Eaton HRC fuses, interactive SLD, General Arrangement, and step-by-step calculation breakdown." />
   <meta name="theme-color" content="#0b1120" />
   <title>Switchgear Heat Loss Calculator — IEC 60439 / 61439</title>
-  <link rel="icon" href="./favicon.svg?v=2.4.0" type="image/svg+xml" />
-  <link rel="manifest" href="./manifest.json?v=2.4.0" />
-  <link rel="stylesheet" href="./css/styles.css?v=2.4.0" />
+  <link rel="icon" href="./favicon.svg?v=2.5.0" type="image/svg+xml" />
+  <link rel="manifest" href="./manifest.json?v=2.5.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=2.5.0" />
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -20,7 +20,7 @@
       <div class="topbar-brand">
         <div class="brand-badge">⚡</div>
         <div>
-          <h1 class="brand-title">Switchgear Thermal &amp; Heat Loss Calculator <span id="app-version-badge" class="version-pill">v2.4.0</span></h1>
+          <h1 class="brand-title">Switchgear Thermal &amp; Heat Loss Calculator <span id="app-version-badge" class="version-pill">v2.5.0</span></h1>
           <div class="brand-sub">IEC 60439 / 61439 · Joule Busbar Physics · Eaton HRC Fuses · SLD &amp; GA Take-off Modelling</div>
         </div>
       </div>
@@ -68,6 +68,7 @@
           <button class="tab-btn" data-tab="schedules">3. Heat Loss Schedules &amp; Audit</button>
           <button class="tab-btn" data-tab="library">4. Device, Fuse &amp; Starter Library</button>
           <button class="tab-btn" data-tab="config">5. Board &amp; Standards Config</button>
+          <button class="tab-btn" data-tab="report">6. Report &amp; Output Builder</button>
         </div>
 
         <!-- TAB 1: SLD -->
@@ -132,6 +133,11 @@
         <div id="tab-config" class="tab-panel scrollable-panel">
           <div id="config-container"></div>
         </div>
+
+        <!-- TAB 6: CONFIGURABLE REPORT & OUTPUT BUILDER -->
+        <div id="tab-report" class="tab-panel">
+          <div id="report-builder-container" class="report-builder-host"></div>
+        </div>
       </section>
 
       <!-- Right Context Inspector -->
@@ -153,7 +159,7 @@
         <button id="btn-privacy-footer" class="footer-link">Read full data &amp; storage notice</button>
       </div>
       <div class="footer-right">
-        <span id="update-status" class="update-status">v2.4.0 · Up to date</span>
+        <span id="update-status" class="update-status">v2.5.0 · Up to date</span>
       </div>
     </footer>
 
@@ -161,14 +167,14 @@
     <div id="print-report" class="print-only"></div>
   </div>
 
-  <script src="./js/physics.js?v=2.4.0"></script>
-  <script src="./js/catalog.js?v=2.4.0"></script>
-  <script src="./js/state.js?v=2.4.0"></script>
-  <script src="./js/sld.js?v=2.4.0"></script>
-  <script src="./js/ga.js?v=2.4.0"></script>
-  <script src="./js/explain.js?v=2.4.0"></script>
-  <script src="./js/help.js?v=2.4.0"></script>
-  <script src="./js/report.js?v=2.4.0"></script>
-  <script src="./js/app.js?v=2.4.0"></script>
+  <script src="./js/physics.js?v=2.5.0"></script>
+  <script src="./js/catalog.js?v=2.5.0"></script>
+  <script src="./js/state.js?v=2.5.0"></script>
+  <script src="./js/sld.js?v=2.5.0"></script>
+  <script src="./js/ga.js?v=2.5.0"></script>
+  <script src="./js/explain.js?v=2.5.0"></script>
+  <script src="./js/help.js?v=2.5.0"></script>
+  <script src="./js/report.js?v=2.5.0"></script>
+  <script src="./js/app.js?v=2.5.0"></script>
 </body>
 </html>

@@ -467,6 +467,7 @@ window.SGState = (function () {
         },
       ],
       deviceLibrary: lib,
+      reportConfig: createDefaultReportConfig(),
     };
   }
 
@@ -590,6 +591,165 @@ window.SGState = (function () {
     return p;
   }
 
+  function createDefaultReportConfig() {
+    return {
+      preset: 'standard', // 'executive' | 'standard' | 'full_audit' | 'drawings_only' | 'custom'
+      outputFormat: 'formatted', // 'formatted' | 'text' | 'markdown'
+      orientation: 'landscape', // 'landscape' | 'portrait'
+      unitsMode: 'both', // 'both' | 'kw' | 'w'
+      kwDecimals: 3,
+      includeBtuHvac: true,
+      diagramTheme: 'light', // 'light' | 'active'
+      scenarioScope: 'all', // 'all' | 'active'
+      pageBreaks: true,
+      includeInactiveRows: true,
+      gaHeatmap: true,
+      gaDims: true,
+      gaBusbars: true,
+      sections: {
+        titleBlock: true,
+        execSummary: true,
+        categoryBreakdown: true,
+        busbarBasis: true,
+        workedBusbarSteps: false,
+        sldDiagram: true,
+        gaDiagram: true,
+        hbbSchedule: true,
+        vbbSchedule: true,
+        columnSummary: true,
+        deviceSchedule: true,
+        deviceSubComponents: false,
+        enclosureAdvisory: true,
+        methodologyAppendix: false,
+        signOffBlock: true,
+      },
+      customNotes:
+        'Approximate switchgear heat output based on IEC 60439 / 61439 Joule busbar calculations and IEC TR 60890 device scaling. For sealed enclosure temperature-rise certification, verify against vendor type-test limits.',
+      checkedBy: '',
+      approvedBy: '',
+    };
+  }
+
+  function applyReportPreset(reportConfig, presetId) {
+    const base = createDefaultReportConfig();
+    const cfg = Object.assign(base, reportConfig || {});
+    cfg.preset = presetId;
+    if (presetId === 'executive') {
+      cfg.orientation = 'portrait';
+      cfg.scenarioScope = 'all';
+      cfg.pageBreaks = false;
+      cfg.includeInactiveRows = false;
+      cfg.sections = {
+        titleBlock: true,
+        execSummary: true,
+        categoryBreakdown: true,
+        busbarBasis: false,
+        workedBusbarSteps: false,
+        sldDiagram: false,
+        gaDiagram: false,
+        hbbSchedule: false,
+        vbbSchedule: false,
+        columnSummary: true,
+        deviceSchedule: false,
+        deviceSubComponents: false,
+        enclosureAdvisory: true,
+        methodologyAppendix: false,
+        signOffBlock: true,
+      };
+    } else if (presetId === 'standard') {
+      cfg.orientation = 'landscape';
+      cfg.scenarioScope = 'all';
+      cfg.pageBreaks = true;
+      cfg.includeInactiveRows = true;
+      cfg.sections = {
+        titleBlock: true,
+        execSummary: true,
+        categoryBreakdown: true,
+        busbarBasis: true,
+        workedBusbarSteps: false,
+        sldDiagram: true,
+        gaDiagram: true,
+        hbbSchedule: true,
+        vbbSchedule: true,
+        columnSummary: true,
+        deviceSchedule: true,
+        deviceSubComponents: false,
+        enclosureAdvisory: true,
+        methodologyAppendix: false,
+        signOffBlock: true,
+      };
+    } else if (presetId === 'full_audit') {
+      cfg.orientation = 'landscape';
+      cfg.scenarioScope = 'all';
+      cfg.pageBreaks = true;
+      cfg.includeInactiveRows = true;
+      cfg.sections = {
+        titleBlock: true,
+        execSummary: true,
+        categoryBreakdown: true,
+        busbarBasis: true,
+        workedBusbarSteps: true,
+        sldDiagram: true,
+        gaDiagram: true,
+        hbbSchedule: true,
+        vbbSchedule: true,
+        columnSummary: true,
+        deviceSchedule: true,
+        deviceSubComponents: true,
+        enclosureAdvisory: true,
+        methodologyAppendix: true,
+        signOffBlock: true,
+      };
+    } else if (presetId === 'drawings_only') {
+      cfg.orientation = 'landscape';
+      cfg.scenarioScope = 'active';
+      cfg.pageBreaks = true;
+      cfg.includeInactiveRows = true;
+      cfg.sections = {
+        titleBlock: true,
+        execSummary: true,
+        categoryBreakdown: false,
+        busbarBasis: false,
+        workedBusbarSteps: false,
+        sldDiagram: true,
+        gaDiagram: true,
+        hbbSchedule: false,
+        vbbSchedule: false,
+        columnSummary: false,
+        deviceSchedule: true,
+        deviceSubComponents: false,
+        enclosureAdvisory: false,
+        methodologyAppendix: false,
+        signOffBlock: false,
+      };
+    }
+    return cfg;
+  }
+
+  function ensureReportConfig(project) {
+    const def = createDefaultReportConfig();
+    if (!project.reportConfig || typeof project.reportConfig !== 'object') {
+      project.reportConfig = def;
+    } else {
+      Object.keys(def).forEach((k) => {
+        if (k === 'sections') return;
+        if (project.reportConfig[k] === undefined) {
+          project.reportConfig[k] = def[k];
+        }
+      });
+      if (!project.reportConfig.sections || typeof project.reportConfig.sections !== 'object') {
+        project.reportConfig.sections = Object.assign({}, def.sections);
+      } else {
+        Object.keys(def.sections).forEach((sk) => {
+          if (project.reportConfig.sections[sk] === undefined) {
+            project.reportConfig.sections[sk] = def.sections[sk];
+          }
+        });
+      }
+    }
+    return project.reportConfig;
+  }
+
   function syncLibraryWithDefaults(deviceLibrary) {
     if (!Array.isArray(deviceLibrary)) {
       return window.SGCatalog.DEFAULT_DEVICE_TEMPLATES.map((t) => window.SGCatalog.cloneTemplate(t));
@@ -614,6 +774,7 @@ window.SGState = (function () {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.columns && parsed.mainBusbar && parsed.config) {
           parsed.deviceLibrary = syncLibraryWithDefaults(parsed.deviceLibrary);
+          ensureReportConfig(parsed);
           return parsed;
         }
       }
@@ -644,6 +805,9 @@ window.SGState = (function () {
     createDefaultProject,
     createDualIncomerProject,
     createBlankProject,
+    createDefaultReportConfig,
+    applyReportPreset,
+    ensureReportConfig,
     syncLibraryWithDefaults,
     loadProject,
     saveProject,

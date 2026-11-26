@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '2.4.0';
+  const APP_VERSION = '2.5.0';
 
   function loadInitialProject() {
     try {
@@ -111,6 +111,7 @@
     if (activeTab === 'schedules') renderSchedulesView(evalRes, allScenarios);
     if (activeTab === 'library') renderLibraryView();
     if (activeTab === 'config') renderConfigView();
+    if (activeTab === 'report') renderReportBuilderView(evalRes, allScenarios);
     if (!skipInspectorRebuild) renderInspector(evalRes);
     updateUndoBtn();
   }
@@ -1856,6 +1857,244 @@
     bind('cfg-hvac', (v) => (c.hvacSafetyMarginPct = Math.max(0, Number(v) || 0)));
   }
 
+  // --- TAB 6: Configurable Report & Output Builder ---
+  function triggerConfiguredPrint(evalRes, allScenarios) {
+    const rcfg = window.SGState.ensureReportConfig(project);
+    let pageStyle = document.getElementById('dynamic-print-page-style');
+    if (!pageStyle) {
+      pageStyle = document.createElement('style');
+      pageStyle.id = 'dynamic-print-page-style';
+      document.head.appendChild(pageStyle);
+    }
+    pageStyle.textContent = `@media print { @page { size: A4 ${rcfg.orientation || 'landscape'}; margin: 10mm 12mm; } }`;
+
+    document.getElementById('print-report').innerHTML = window.SGReport.buildPrintReportHTML(
+      project,
+      evalRes,
+      allScenarios,
+      'print-'
+    );
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => window.print());
+    });
+  }
+
+  function renderReportBuilderView(evalRes, allScenarios) {
+    const host = document.getElementById('report-builder-container');
+    if (!host) return;
+    const rcfg = window.SGState.ensureReportConfig(project);
+    const sec = rcfg.sections;
+
+    const sectionItems = [
+      { key: 'titleBlock', label: 'Title Block & Project Metadata' },
+      { key: 'execSummary', label: 'Executive kW & Scenario Summary' },
+      { key: 'categoryBreakdown', label: 'Heat Loss Breakdown by Category' },
+      { key: 'busbarBasis', label: 'Busbar Electrical & Thermal Basis' },
+      { key: 'workedBusbarSteps', label: 'Worked Step-by-Step Busbar Math' },
+      { key: 'sldDiagram', label: 'Single Line Diagram (SLD)' },
+      { key: 'gaDiagram', label: 'General Arrangement (GA Elevation)' },
+      { key: 'columnSummary', label: 'Column-by-Column Heat Summary' },
+      { key: 'hbbSchedule', label: 'Horizontal Busbar (HBB) Segments' },
+      { key: 'vbbSchedule', label: 'Vertical Dropper (VBB) Segments' },
+      { key: 'deviceSchedule', label: 'Devices, Eaton Fuses & Starters Table' },
+      { key: 'deviceSubComponents', label: 'Expand Device Sub-Components (DOL/HRC)' },
+      { key: 'enclosureAdvisory', label: 'IEC 60890 Surface & Heat Flux Advisory' },
+      { key: 'methodologyAppendix', label: 'Governing Equations Appendix' },
+      { key: 'signOffBlock', label: 'Custom Notes & Sign-Off Table' },
+    ];
+
+    let previewHtml = '';
+    let rawTextOut = '';
+    if (rcfg.outputFormat === 'formatted') {
+      const reportInner = window.SGReport.buildPrintReportHTML(project, evalRes, allScenarios, 'prev-');
+      previewHtml = `<div class="report-paper ${rcfg.orientation === 'portrait' ? 'portrait-preview' : ''}">${reportInner}</div>`;
+    } else {
+      rawTextOut = window.SGReport.buildTextOrMarkdownReport(project, evalRes, allScenarios, rcfg.outputFormat === 'markdown');
+      previewHtml = `<pre class="report-text-preview">${esc(rawTextOut)}</pre>`;
+    }
+
+    host.innerHTML = `
+      <aside class="report-config-sidebar">
+        <div class="insp-section">
+          <div class="insp-section-title">1. Level of Detail Presets</div>
+          <div class="report-preset-grid">
+            <button class="btn btn-sm ${rcfg.preset === 'executive' ? 'btn-primary' : 'btn-secondary'}" data-rep-preset="executive">Executive / HVAC</button>
+            <button class="btn btn-sm ${rcfg.preset === 'standard' ? 'btn-primary' : 'btn-secondary'}" data-rep-preset="standard">Standard Calc</button>
+            <button class="btn btn-sm ${rcfg.preset === 'full_audit' ? 'btn-primary' : 'btn-secondary'}" data-rep-preset="full_audit">Full Audit + Steps</button>
+            <button class="btn btn-sm ${rcfg.preset === 'drawings_only' ? 'btn-primary' : 'btn-secondary'}" data-rep-preset="drawings_only">Diagrams Pack</button>
+          </div>
+          <span class="field-hint">Pick a preset, then customise any section or format below.</span>
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-section-title">2. Output Format &amp; Presentation</div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Preview Format</label>
+              <select id="rep-format">
+                <option value="formatted" ${rcfg.outputFormat === 'formatted' ? 'selected' : ''}>Formatted / PDF</option>
+                <option value="text" ${rcfg.outputFormat === 'text' ? 'selected' : ''}>Plain Text / Email</option>
+                <option value="markdown" ${rcfg.outputFormat === 'markdown' ? 'selected' : ''}>Markdown (.md)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>PDF Orientation</label>
+              <select id="rep-orient">
+                <option value="landscape" ${rcfg.orientation !== 'portrait' ? 'selected' : ''}>A4 Landscape</option>
+                <option value="portrait" ${rcfg.orientation === 'portrait' ? 'selected' : ''}>A4 Portrait</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Power Units</label>
+              <select id="rep-units">
+                <option value="both" ${rcfg.unitsMode === 'both' ? 'selected' : ''}>kW &amp; W (Both)</option>
+                <option value="kw" ${rcfg.unitsMode === 'kw' ? 'selected' : ''}>kW Only</option>
+                <option value="w" ${rcfg.unitsMode === 'w' ? 'selected' : ''}>Watts Only</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>kW Precision</label>
+              <select id="rep-dp">
+                <option value="1" ${Number(rcfg.kwDecimals) === 1 ? 'selected' : ''}>1 decimal (0.0)</option>
+                <option value="2" ${Number(rcfg.kwDecimals) === 2 ? 'selected' : ''}>2 decimals (0.00)</option>
+                <option value="3" ${Number(rcfg.kwDecimals) === 3 ? 'selected' : ''}>3 decimals (0.000)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Scenarios Shown</label>
+              <select id="rep-scenarios">
+                <option value="all" ${rcfg.scenarioScope !== 'active' ? 'selected' : ''}>All 4 Scenarios</option>
+                <option value="active" ${rcfg.scenarioScope === 'active' ? 'selected' : ''}>Active Scenario Only</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Diagram Colours</label>
+              <select id="rep-diag-theme">
+                <option value="light" ${rcfg.diagramTheme !== 'active' ? 'selected' : ''}>Light CAD (Print)</option>
+                <option value="active" ${rcfg.diagramTheme === 'active' ? 'selected' : ''}>Match App Theme</option>
+              </select>
+            </div>
+          </div>
+          <div class="report-check-list" style="margin-top:4px;">
+            <label class="report-check-item"><input type="checkbox" id="rep-btu" ${rcfg.includeBtuHvac ? 'checked' : ''} /> Include BTU/hr &amp; HVAC Cooling Margin</label>
+            <label class="report-check-item"><input type="checkbox" id="rep-breaks" ${rcfg.pageBreaks ? 'checked' : ''} /> Page Breaks Before Diagrams &amp; Schedules</label>
+            <label class="report-check-item"><input type="checkbox" id="rep-inactive" ${rcfg.includeInactiveRows ? 'checked' : ''} /> Include Inactive / Future (OFF) &amp; Spare Rows</label>
+          </div>
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-section-title">3. Sections to Include</div>
+          <div class="report-check-list">
+            ${sectionItems
+              .map(
+                (it) =>
+                  `<label class="report-check-item"><input type="checkbox" data-rep-sec="${it.key}" ${sec[it.key] ? 'checked' : ''} /> ${esc(it.label)}</label>`
+              )
+              .join('')}
+          </div>
+          ${
+            sec.gaDiagram
+              ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);">
+                  <span class="field-hint" style="display:block;margin-bottom:4px;">General Arrangement (GA) Diagram Layers:</span>
+                  <div class="action-row">
+                    <label class="report-check-item"><input type="checkbox" id="rep-ga-heat" ${rcfg.gaHeatmap ? 'checked' : ''} /> Heatmap</label>
+                    <label class="report-check-item"><input type="checkbox" id="rep-ga-dims" ${rcfg.gaDims ? 'checked' : ''} /> Dims</label>
+                    <label class="report-check-item"><input type="checkbox" id="rep-ga-bus" ${rcfg.gaBusbars ? 'checked' : ''} /> Busbars</label>
+                  </div>
+                </div>`
+              : ''
+          }
+        </div>
+
+        <div class="insp-section">
+          <div class="insp-section-title">4. Custom Notes &amp; Sign-Off</div>
+          <div class="field">
+            <label>Notes / Assumptions on Report</label>
+            <textarea id="rep-notes" rows="3" placeholder="Enter design basis notes or HVAC assumptions…">${esc(rcfg.customNotes || '')}</textarea>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>Checked By</label><input type="text" id="rep-checked" value="${esc(rcfg.checkedBy || '')}" placeholder="Name / Initials" /></div>
+            <div class="field"><label>Approved By</label><input type="text" id="rep-approved" value="${esc(rcfg.approvedBy || '')}" placeholder="Name / Initials" /></div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="report-preview-pane">
+        <div class="canvas-toolbar">
+          <div class="toolbar-group">
+            <button id="rep-btn-print" class="btn btn-sm btn-primary">🖨 Print / Save PDF</button>
+            <button id="rep-btn-copy" class="btn btn-sm btn-secondary">📋 Copy ${rcfg.outputFormat === 'markdown' ? 'Markdown' : 'Text Summary'}</button>
+            <button id="rep-btn-dl-html" class="btn btn-sm btn-secondary">⬇ Download HTML</button>
+            <button id="rep-btn-dl-txt" class="btn btn-sm btn-secondary">⬇ Download .txt</button>
+            <button id="rep-btn-dl-md" class="btn btn-sm btn-secondary">⬇ Download .md</button>
+          </div>
+          <div class="toolbar-hint">Live WYSIWYG preview — prints 1:1 to ${rcfg.orientation.toUpperCase()} A4 PDF.</div>
+        </div>
+        <div class="report-preview-scroll">${previewHtml}</div>
+      </section>
+    `;
+
+    // Bind Preset buttons
+    host.querySelectorAll('[data-rep-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        project.reportConfig = window.SGState.applyReportPreset(rcfg, btn.dataset.repPreset);
+        renderAll(true);
+      });
+    });
+
+    // Bind Presentation & Format controls
+    const bindRep = (id, fn) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', () => { fn(el); renderAll(true); });
+    };
+    bindRep('rep-format', (el) => (rcfg.outputFormat = el.value));
+    bindRep('rep-orient', (el) => (rcfg.orientation = el.value));
+    bindRep('rep-units', (el) => (rcfg.unitsMode = el.value));
+    bindRep('rep-dp', (el) => (rcfg.kwDecimals = Number(el.value)));
+    bindRep('rep-scenarios', (el) => (rcfg.scenarioScope = el.value));
+    bindRep('rep-diag-theme', (el) => (rcfg.diagramTheme = el.value));
+    bindRep('rep-btu', (el) => (rcfg.includeBtuHvac = el.checked));
+    bindRep('rep-breaks', (el) => (rcfg.pageBreaks = el.checked));
+    bindRep('rep-inactive', (el) => (rcfg.includeInactiveRows = el.checked));
+    bindRep('rep-ga-heat', (el) => (rcfg.gaHeatmap = el.checked));
+    bindRep('rep-ga-dims', (el) => (rcfg.gaDims = el.checked));
+    bindRep('rep-ga-bus', (el) => (rcfg.gaBusbars = el.checked));
+    bindRep('rep-notes', (el) => (rcfg.customNotes = el.value));
+    bindRep('rep-checked', (el) => (rcfg.checkedBy = el.value));
+    bindRep('rep-approved', (el) => (rcfg.approvedBy = el.value));
+
+    host.querySelectorAll('[data-rep-sec]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        rcfg.sections[cb.dataset.repSec] = cb.checked;
+        rcfg.preset = 'custom';
+        renderAll(true);
+      });
+    });
+
+    // Bind Export / Print / Copy Actions
+    document.getElementById('rep-btn-print').addEventListener('click', () => triggerConfiguredPrint(evalRes, allScenarios));
+    document.getElementById('rep-btn-copy').addEventListener('click', () => {
+      const btn = document.getElementById('rep-btn-copy');
+      const txt = window.SGReport.buildTextOrMarkdownReport(project, evalRes, allScenarios, rcfg.outputFormat === 'markdown');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(() => {
+          const orig = btn.textContent;
+          btn.textContent = '✓ Copied!';
+          setTimeout(() => (btn.textContent = orig), 1800);
+        });
+      }
+    });
+    document.getElementById('rep-btn-dl-html').addEventListener('click', () => window.SGReport.exportStandaloneHTML(project, evalRes, allScenarios));
+    document.getElementById('rep-btn-dl-txt').addEventListener('click', () => {
+      const txt = window.SGReport.buildTextOrMarkdownReport(project, evalRes, allScenarios, false);
+      window.SGReport.exportTextFile(txt, 'txt', 'text/plain;charset=utf-8', project, evalRes);
+    });
+    document.getElementById('rep-btn-dl-md').addEventListener('click', () => {
+      const md = window.SGReport.buildTextOrMarkdownReport(project, evalRes, allScenarios, true);
+      window.SGReport.exportTextFile(md, 'md', 'text/markdown;charset=utf-8', project, evalRes);
+    });
+  }
+
   // --- Theme Persistence & Switcher ---
   const THEME_KEY = 'sg_heat_calc_theme_v1';
   function applyTheme(themeId) {
@@ -2027,15 +2266,7 @@
     document.getElementById('btn-print-report').addEventListener('click', () => {
       const allScenarios = window.SGPhysics.evaluateAllScenarios(project);
       const activeSc = allScenarios.find((s) => s.id === project.activeScenario) || allScenarios[0];
-      document.getElementById('print-report').innerHTML = window.SGReport.buildPrintReportHTML(
-        project,
-        activeSc.result,
-        allScenarios
-      );
-      // Wait two animation frames so both SLD & General Arrangement SVGs finish layout before opening Print dialog
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => window.print());
-      });
+      triggerConfiguredPrint(activeSc.result, allScenarios);
     });
 
     // Privacy & Data Storage Modal
