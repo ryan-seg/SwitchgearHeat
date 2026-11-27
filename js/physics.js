@@ -387,16 +387,22 @@ window.SGPhysics = (function () {
           : calcDeviceLoss(tier, iOp, voltageV, isActive);
 
         // Take-off tail + bolted joint loss for outgoing feeders & interconnectors
+        // Single-phase (1P) circuits use 2 conductors (1 Phase + 1 Neutral); 3P circuits use 3 phases (+ optional N)
         let takeoffLossW = 0;
         if (isActive && iOp > 0 && tier.role !== 'incomer' && tier.role !== 'bus_coupler' && tier.role !== 'spacer') {
-          // Take-off links sized roughly to column vertical busbar or feeder rating
           const takeoffRes = calcBusbarResistance(
             tier.takeoffBusbar || vbbSpec,
             freqHz
           );
-          const tailLoss = calcBusbarLossPerMetre(takeoffRes, iOp, poles, neutralRatio).wPerMTotal * takeoffTailM;
-          const jointLoss = 3 * iOp * iOp * jointR_ohm; // 1 joint set (3 phases) at dropper tap-off
-          takeoffLossW = tailLoss + jointLoss;
+          if (tier.phases === '1P') {
+            const tailLoss = 2 * iOp * iOp * takeoffRes.rAcT * takeoffTailM;
+            const jointLoss = 2 * iOp * iOp * jointR_ohm; // 1P + N joints
+            takeoffLossW = tailLoss + jointLoss;
+          } else {
+            const tailLoss = calcBusbarLossPerMetre(takeoffRes, iOp, poles, neutralRatio).wPerMTotal * takeoffTailM;
+            const jointLoss = 3 * iOp * iOp * jointR_ohm; // 1 joint set (3 phases) at dropper tap-off
+            takeoffLossW = tailLoss + jointLoss;
+          }
         }
 
         // Optional interconnector cable internal loss
@@ -421,11 +427,12 @@ window.SGPhysics = (function () {
       });
 
       // Column net outgoing load current (with board RDF applied to local feeders, NOT interconnector)
+      // Single-phase (1P) circuits contribute I_1P / 3 equivalent per-phase current to the 3-phase busbars & incomer (exact kVA conservation)
       let colLocalRawA = 0;
       let colInterconnectorA = 0;
       tierResults.forEach((tr) => {
         if (tr.tier.role === 'feeder' && tr.isActive) {
-          colLocalRawA += tr.iOp;
+          colLocalRawA += tr.tier.phases === '1P' ? tr.iOp / 3 : tr.iOp;
         } else if (tr.tier.role === 'interconnector' && tr.isActive) {
           colInterconnectorA += tr.iOp;
         }
@@ -617,10 +624,12 @@ window.SGPhysics = (function () {
 
       if (loadTiers.length === 0) return;
 
-      // Remaining downstream current at each tap-off point
+      // Remaining downstream current at each tap-off point (1P circuits contribute I_1P / 3 per phase on 3P VBB)
       const tierEffectiveAmps = loadTiers.map((tr) => {
         if (!tr.isActive) return 0;
-        return tr.tier.role === 'interconnector' ? tr.iOp : tr.iOp * boardRdf;
+        if (tr.tier.role === 'interconnector') return tr.iOp;
+        const busEquivA = tr.tier.phases === '1P' ? tr.iOp / 3 : tr.iOp;
+        return busEquivA * boardRdf;
       });
 
       let prevYMm = hbbCenterYMm;

@@ -777,19 +777,30 @@ window.SGExplain = (function () {
             : `Normal operation → transfer set to ${tier.normalTransferCurrentA || 0} A.`,
         });
       } else if (tier.loadInputMode === 'kw') {
-        const rawA = (tier.loadKw * 1000) / (Math.sqrt(3) * cfg.voltageV * tier.powerFactor * tier.efficiency);
+        const is1P = tier.phases === '1P';
+        const vPh = cfg.voltageV / Math.sqrt(3);
+        const rawA = is1P
+          ? (tier.loadKw * 1000) / (vPh * tier.powerFactor * tier.efficiency)
+          : (tier.loadKw * 1000) / (Math.sqrt(3) * cfg.voltageV * tier.powerFactor * tier.efficiency);
         const growthMul = evalRes.includeFuture && tier.status === 'active' && cfg.globalFutureGrowthPct > 0 ? 1 + cfg.globalFutureGrowthPct / 100 : 1;
         steps.push({
-          label: 'Step 1 — Operating Current I_op from Load Power (kW)',
-          math: `I_flc = (${tier.loadKw} × 1000) / (√3 × ${cfg.voltageV} × ${tier.powerFactor} × ${tier.efficiency}) = ${fmt(rawA, 1)} A → × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`,
-          note: isFutureOff ? 'Tier is marked FUTURE and off in this scenario → 0 A.' : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated frame.`,
+          label: `Step 1 — Operating Current I_op from Load Power (${is1P ? '1-Phase ' + Math.round(vPh) + 'V' : '3-Phase ' + cfg.voltageV + 'V'})`,
+          math: is1P
+            ? `I_flc(1P) = (${tier.loadKw} × 1000) / (${fmt(vPh, 1)}V × ${tier.powerFactor} × ${tier.efficiency}) = ${fmt(rawA, 1)} A → × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`
+            : `I_flc(3P) = (${tier.loadKw} × 1000) / (√3 × ${cfg.voltageV}V × ${tier.powerFactor} × ${tier.efficiency}) = ${fmt(rawA, 1)} A → × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`,
+          note: isFutureOff
+            ? 'Tier is marked FUTURE and off in this scenario → 0 A.'
+            : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated device${tier.frameSize ? ' (' + tier.frameSize + ')' : ''}.${is1P ? ` Contributes ${fmt(tr.iOp / 3, 1)} A/ph equivalent to 3P busbars & incomer.` : ''}`,
         });
       } else {
+        const is1P = tier.phases === '1P';
         const growthMul = evalRes.includeFuture && tier.status === 'active' && cfg.globalFutureGrowthPct > 0 ? 1 + cfg.globalFutureGrowthPct / 100 : 1;
         steps.push({
-          label: 'Step 1 — Operating Current I_op (Direct Amperes)',
+          label: `Step 1 — Operating Current I_op (Direct Amperes, ${is1P ? '1-Phase 230V' : '3-Phase ' + cfg.voltageV + 'V'})`,
           math: `I_op = ${tier.operatingCurrentA} A × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`,
-          note: isFutureOff ? 'Tier is marked FUTURE and off in this scenario → 0 A.' : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated frame.`,
+          note: isFutureOff
+            ? 'Tier is marked FUTURE and off in this scenario → 0 A.'
+            : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated device${tier.frameSize ? ' (' + tier.frameSize + ')' : ''}.${is1P ? ` Contributes ${fmt(tr.iOp / 3, 1)} A/ph equivalent to 3P busbars & incomer.` : ''}`,
         });
       }
 

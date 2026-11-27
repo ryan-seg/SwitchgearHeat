@@ -375,10 +375,10 @@ window.SGXlsxExport = (function () {
     const mapLib = indexCells(docLib);
     const mapRm  = indexCells(docRm);
 
-    // 1. Read existing library catalog in sheet8 (06_Device_&_Fuse_Library, rows 5..185)
+    // 1. Read existing library catalog in sheet8 (06_Device_&_Fuse_Library, rows 5..215)
     const excelLib = new Map(); // name -> { inA, pnW, fixW, model }
     let nextCustomLibRow = 5;
-    for (let r = 5; r <= 185; r++) {
+    for (let r = 5; r <= 215; r++) {
       const name = getCellText(mapLib.get(`A${r}`)).trim();
       if (name) {
         excelLib.set(name, {
@@ -433,7 +433,7 @@ window.SGXlsxExport = (function () {
       if (excelLib.has(customKey)) {
         customKey = stripWildcards(`${item.tag || 'Custom'} — ${cleanName} (${wantIn}A, ${wantPn}W)`);
       }
-      if (!excelLib.has(customKey) && nextCustomLibRow <= 185) {
+      if (!excelLib.has(customKey) && nextCustomLibRow <= 215) {
         const rr = nextCustomLibRow++;
         setCellValue(docLib, mapLib, `A${rr}`, customKey);
         setCellValue(docLib, mapLib, `B${rr}`, item.category || 'Custom');
@@ -566,14 +566,15 @@ window.SGXlsxExport = (function () {
       if (tier.role === 'incomer' && tier.incomerState === 'open') statusEx = 'Standby';
 
       const tplNameEx = ensureLibraryMatch(tier, tier.description);
+      const is1P = tier.phases === '1P';
       const loadModeEx =
         tier.role === 'incomer' || tier.role === 'bus_coupler'
           ? 'Auto'
           : tier.role === 'interconnector'
           ? 'Amps'
           : tier.loadInputMode === 'kw'
-          ? 'kW'
-          : 'Amps';
+          ? (is1P ? 'kW (1P)' : 'kW')
+          : (is1P ? 'Amps (1P)' : 'Amps');
       const baseLoad =
         tier.role === 'incomer' || tier.role === 'bus_coupler' || tier.role === 'spacer'
           ? 0

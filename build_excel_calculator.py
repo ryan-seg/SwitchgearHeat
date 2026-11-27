@@ -332,6 +332,39 @@ def build_library_data():
             f"VSD / Inverter Drive {kw_str} kW ({pct:.1f}% loss)", "Feeder", frame_a, pn_tot, fan_w, "vsd", h,
             "IEC 61800-9-2 Reference Complete Drive Module (CDM) Losses", URL_61800_9)
 
+    # 10. Single-Phase (1P 230V) Devices — MCBs, RCBOs, Eaton HRC, 1P DOL, 1P Control/Heater
+    for amps, pn, h in [(6, 1.5, 140), (10, 1.8, 140), (16, 2.2, 140), (20, 2.5, 140), (25, 2.9, 140), (32, 3.3, 140), (40, 3.9, 140), (50, 4.6, 150), (63, 5.4, 150)]:
+        add("MCB", "Generic IEC", "IEC 60898-1 1P (230V)", amps, f"{amps} A (1P)",
+            f"MCB {amps}A 1P (230V Single-Phase)", "Feeder", amps, pn, 0.0, "quadratic", h,
+            "IEC 60898-1 Table 6 / IEC TR 60890 Typical 1P MCB Losses", URL_60898_1)
+
+    for amps, pn, pfix, h in [(6, 2.4, 0.5, 150), (10, 2.8, 0.5, 150), (16, 3.4, 0.5, 150), (20, 3.9, 0.5, 150), (32, 5.1, 0.5, 150), (40, 6.2, 0.5, 150)]:
+        add("RCBO (1P+N)", "Generic IEC", "IEC 61009-1 1P+N (230V)", amps, f"{amps} A (1P+N)",
+            f"RCBO {amps}A 1P+N 30mA (230V Single-Phase)", "Feeder", amps, pn, pfix, "quadratic", h,
+            "IEC 61009-1 Typical 1P+N RCBO Power Loss Data", URL_60898_1)
+
+    for part, size, amps, w_link, w_base1p, h in [
+        ("16NHG000B", "NH000", 16, 2.3, 0.6, 150), ("32NHG000B", "NH000", 32, 3.4, 0.9, 150),
+        ("63NHG000B", "NH000", 63, 4.6, 1.6, 160), ("100NHG000B", "NH000", 100, 7.4, 2.6, 180),
+        ("125NHG00B", "NH00", 125, 8.8, 3.2, 200), ("160NHG00B", "NH00", 160, 10.0, 4.0, 220),
+    ]:
+        total_pn = round(w_link + w_base1p, 1)
+        add("HRC Fuse-Switch", "Eaton Bussmann", f"1P {size} gG HRC (230V)", amps, f"{amps} A (1P)",
+            f"Eaton {part} 1P — {amps}A {size} gG HRC (230V, {w_link}W/link)", "Feeder", amps, total_pn, 0.0, "quadratic", h,
+            f"Eaton Bussmann Data Sheet 10164 — {part} (1P {size} gG)", URL_EATON)
+
+    for kw, frame_a, pn, pfix, h in [(0.75, 10, 5.0, 4.0, 170), (1.5, 16, 6.5, 4.5, 170), (2.2, 20, 7.9, 5.0, 180), (3.0, 25, 9.5, 5.5, 180)]:
+        kw_str = f"{kw:g}"
+        add("DOL Starter", "Generic IEC", "IEC 60947-4-1 1P DOL (230V)", kw, f"{kw_str} kW 1P ({frame_a}A)",
+            f"DOL Starter 1P {kw_str} kW (230V, {frame_a}A frame)", "Feeder", frame_a, pn, pfix, "quadratic", h,
+            "IEC 60947-4-1 Single-Phase DOL Starter Dissipation", URL_60947_4)
+
+    for amps, kw, pn, pfix, h in [(16, 3.5, 4.0, 4.5, 160), (32, 7.0, 6.7, 6.0, 170), (63, 14.0, 11.9, 8.0, 190)]:
+        kw_str = f"{kw:g}"
+        add("1P Control / Heater", "Generic IEC", "1P+N Contactor Circuit (230V)", amps, f"{amps} A ({kw_str} kW 1P)",
+            f"1P Contactor / Heater Circuit {amps}A ({kw_str} kW, 230V)", "Feeder", amps, pn, pfix, "quadratic", h,
+            "IEC 60947-4-1 / IEC 60898-1 Single-Phase Contactor Circuit Losses", URL_60947_4)
+
     raw.sort(key=lambda x: x[0])
     return [row for _, row in raw]
 
@@ -363,7 +396,7 @@ def generate_workbook():
     ws_help.sheet_properties.tabColor = "7C3AED"
 
     LIB_START = 5
-    LIB_END = 185
+    LIB_END = 215
     COL_START = 6
     COL_END = 13
     FEED_START = 17
@@ -890,7 +923,10 @@ def generate_workbook():
 
         ws_fed.cell(r, 5, 0 if idx == 0 else f"=E{r-1}+C{r-1}").number_format = "#,##0"
         ws_fed.cell(r, 6, f"=IF(C{r}>0,E{r}+C{r}/2,0)").number_format = "#,##0"
-        ws_fed.cell(r, 7, f"=SUMIFS($S${FEED_START}:$S${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Feeder\")*'02_Board_&_Busbars'!$B$16").number_format = "#,##0.0"
+        ws_fed.cell(r, 7,
+            f"=(SUMIFS($S${FEED_START}:$S${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Feeder\",$I${FEED_START}:$I${FEED_END},\"<>*1P*\")"
+            f"+SUMIFS($S${FEED_START}:$S${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Feeder\",$I${FEED_START}:$I${FEED_END},\"*1P*\")/3)*'02_Board_&_Busbars'!$B$16"
+        ).number_format = "#,##0.0"
         ws_fed.cell(r, 8, f"=SUMIFS($S${FEED_START}:$S${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Interconnector\")").number_format = "#,##0.0"
         ws_fed.cell(r, 9,
             f"=IF(COUNTIFS($A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")>0,"
@@ -902,7 +938,8 @@ def generate_workbook():
 
         for sc_offset, i_col in enumerate(["AD", "AE", "AF", "AG"]):
             ws_fed.cell(r, 13 + sc_offset,
-                f"=SUMIFS(${i_col}${FEED_START}:${i_col}${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Feeder\")*'02_Board_&_Busbars'!$B$16"
+                f"=(SUMIFS(${i_col}${FEED_START}:${i_col}${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Feeder\",$I${FEED_START}:$I${FEED_END},\"<>*1P*\")"
+                f"+SUMIFS(${i_col}${FEED_START}:${i_col}${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Feeder\",$I${FEED_START}:$I${FEED_END},\"*1P*\")/3)*'02_Board_&_Busbars'!$B$16"
                 f"+SUMIFS(${i_col}${FEED_START}:${i_col}${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Interconnector\")"
             ).number_format = "#,##0.0"
 
@@ -973,7 +1010,8 @@ def generate_workbook():
         ).number_format = "#,##0"
 
         has_act_inc = f"COUNTIFS($E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")>0"
-        base_feeder_i = f"IF(I{r}=\"kW\",(J{r}*1000)/(SQRT(3)*'02_Board_&_Busbars'!$B$12*MAX(0.1,L{r})*MAX(0.1,M{r})),J{r})*IF(N{r}=\"\",1,N{r})"
+        base_feeder_i = f"IF(I{r}=\"kW (1P)\",(J{r}*1000)/(('02_Board_&_Busbars'!$B$12/SQRT(3))*MAX(0.1,L{r})*MAX(0.1,M{r})),IF(I{r}=\"kW\",(J{r}*1000)/(SQRT(3)*'02_Board_&_Busbars'!$B$12*MAX(0.1,L{r})*MAX(0.1,M{r})),J{r}))*IF(N{r}=\"\",1,N{r})"
+        cond_mul = f"IF(ISNUMBER(SEARCH(\"1P\",I{r})),2,3)"
         ws_fed.cell(r, 30, f"=IF(OR(A{r}=\"\",NOT({has_act_inc})),0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",IF(F{r}=\"Active\",J{r},0),IF(F{r}=\"Active\",{base_feeder_i},0))))").number_format = "#,##0.0"
         ws_fed.cell(r, 31, f"=IF(OR(A{r}=\"\",NOT({has_act_inc})),0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",K{r},IF(F{r}=\"Active\",{base_feeder_i},0))))").number_format = "#,##0.0"
         ws_fed.cell(r, 32, f"=IF(OR(A{r}=\"\",NOT({has_act_inc})),0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",IF(F{r}=\"Active\",J{r},0),IF(F{r}=\"Active\",({base_feeder_i})*(1+'02_Board_&_Busbars'!$B$17),IF(F{r}=\"Future\",{base_feeder_i},0)))))").number_format = "#,##0.0"
@@ -996,7 +1034,7 @@ def generate_workbook():
             vbb_rac_expr = f"IF(OR(IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"VBB-Std\")=\"VBB-Heavy\",AND(E{r}=\"Interconnector\",IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"None\")=\"None\")),'02_Board_&_Busbars'!$D$60,'02_Board_&_Busbars'!$C$60)"
             takeoff_part = (
                 f"IF(E{r}=\"Incomer\",3*(({iop_ref})^2)*'02_Board_&_Busbars'!$B$60*0.000001*0.6 + 6*(({iop_ref})^2)*'02_Board_&_Busbars'!$B$23*0.000001,"
-                f"IF(OR(E{r}=\"Feeder\",E{r}=\"Interconnector\"),3*(({iop_ref})^2)*{vbb_rac_expr}*0.000001*'02_Board_&_Busbars'!$B$22 + 3*(({iop_ref})^2)*'02_Board_&_Busbars'!$B$23*0.000001,0))"
+                f"IF(OR(E{r}=\"Feeder\",E{r}=\"Interconnector\"),{cond_mul}*(({iop_ref})^2)*{vbb_rac_expr}*0.000001*'02_Board_&_Busbars'!$B$22 + {cond_mul}*(({iop_ref})^2)*'02_Board_&_Busbars'!$B$23*0.000001,0))"
             )
             ic_cable_part = f"IF(E{r}=\"Interconnector\",3*(({iop_ref})^2)*(0.017241*(1+0.00393*50)/(3*240))*1.05*2.5,0)"
             return f"=IF(A{r}=\"\",0,IF({is_on},Q{r}+{var_part}+{takeoff_part}+{ic_cable_part},0))"
@@ -1009,7 +1047,7 @@ def generate_workbook():
         ws_fed.cell(r, 22, f"=IF(A{r}=\"\",0,IF({is_act_now},IF({loss_mod}=\"vsd\",P{r}*(0.25+0.75*(S{r}/MAX(1,O{r}))),P{r}*T{r}),0))").number_format = "#,##0.0"
         ws_fed.cell(r, 23,
             f"=IF(OR(A{r}=\"\",S{r}<=0),0,IF(E{r}=\"Incomer\",3*(S{r}^2)*'02_Board_&_Busbars'!$B$60*0.000001*0.6 + 6*(S{r}^2)*'02_Board_&_Busbars'!$B$23*0.000001,"
-            f"IF(OR(E{r}=\"Feeder\",E{r}=\"Interconnector\"),3*(S{r}^2)*{vbb_rac}*0.000001*'02_Board_&_Busbars'!$B$22 + 3*(S{r}^2)*'02_Board_&_Busbars'!$B$23*0.000001,0)))"
+            f"IF(OR(E{r}=\"Feeder\",E{r}=\"Interconnector\"),{cond_mul}*(S{r}^2)*{vbb_rac}*0.000001*'02_Board_&_Busbars'!$B$22 + {cond_mul}*(S{r}^2)*'02_Board_&_Busbars'!$B$23*0.000001,0)))"
         ).number_format = "#,##0.0"
         ws_fed.cell(r, 24, f"=IF(AND(E{r}=\"Interconnector\",S{r}>0),3*(S{r}^2)*(0.017241*(1+0.00393*50)/(3*240))*1.05*2.5,0)").number_format = "#,##0.0"
         ws_fed.cell(r, 25, f"=U{r}+V{r}+W{r}+X{r}").number_format = "#,##0.0"
@@ -1036,7 +1074,8 @@ def generate_workbook():
     for cc in [30, 31, 32, 33]:
         cl = get_column_letter(cc)
         c = ws_fed.cell(r_tot, cc,
-            f"=SUMIFS({cl}{FEED_START}:{cl}{FEED_END},$E${FEED_START}:$E${FEED_END},\"Feeder\")*'02_Board_&_Busbars'!$B$16"
+            f"=(SUMIFS({cl}{FEED_START}:{cl}{FEED_END},$E${FEED_START}:$E${FEED_END},\"Feeder\",$I${FEED_START}:$I${FEED_END},\"<>*1P*\")"
+            f"+SUMIFS({cl}{FEED_START}:{cl}{FEED_END},$E${FEED_START}:$E${FEED_END},\"Feeder\",$I${FEED_START}:$I${FEED_END},\"*1P*\")/3)*'02_Board_&_Busbars'!$B$16"
             f"+SUMIFS({cl}{FEED_START}:{cl}{FEED_END},$E${FEED_START}:$E${FEED_END},\"Interconnector\")"
         ); c.number_format = "#,##0.0"; c.alignment = ALIGN_R
 
@@ -1051,7 +1090,7 @@ def generate_workbook():
         (DataValidation(type="list", formula1='"Feeder,Incomer,Bus Coupler,Interconnector,Spare / Placeholder"', allow_blank=True), f"E{FEED_START}:E{FEED_END}"),
         (DataValidation(type="list", formula1='"Active,Future,Standby"', allow_blank=True), f"F{FEED_START}:F{FEED_END}"),
         (DataValidation(type="list", formula1=f"={lib_name_rng}", allow_blank=True), f"G{FEED_START}:G{FEED_END}"),
-        (DataValidation(type="list", formula1='"kW,Amps,Auto"', allow_blank=True), f"I{FEED_START}:I{FEED_END}"),
+        (DataValidation(type="list", formula1='"kW,Amps,kW (1P),Amps (1P),Auto"', allow_blank=True), f"I{FEED_START}:I{FEED_END}"),
     ]:
         ws_fed.add_data_validation(dv); dv.add(rng)
 
@@ -1160,7 +1199,8 @@ def generate_workbook():
         ws_seg.cell(r, 6, f"=IF(A{r}=\"\",\"\",IF(IFERROR(INDEX('03_Feeder_Schedule'!$D${COL_START}:$D${COL_END},MATCH(A{r},'03_Feeder_Schedule'!$A${COL_START}:$A${COL_END},0)),\"None\")=\"None\",IF('03_Feeder_Schedule'!E{fr}=\"Interconnector\",\"VBB-Heavy\",\"VBB-Std\"),INDEX('03_Feeder_Schedule'!$D${COL_START}:$D${COL_END},MATCH(A{r},'03_Feeder_Schedule'!$A${COL_START}:$A${COL_END},0))))").alignment = ALIGN_C
         ws_seg.cell(r, 7, f"=IF(F{r}=\"VBB-Heavy\",'02_Board_&_Busbars'!$D$60,IF(F{r}=\"VBB-Std\",'02_Board_&_Busbars'!$C$60,0))").number_format = "0.00"
         ws_seg.cell(r, 8,
-            f"=IF(A{r}=\"\",0,SUMIFS('03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\")*'02_Board_&_Busbars'!$B$16"
+            f"=IF(A{r}=\"\",0,(SUMIFS('03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\",'03_Feeder_Schedule'!$I${FEED_START}:$I${FEED_END},\"<>*1P*\")"
+            f"+SUMIFS('03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\",'03_Feeder_Schedule'!$I${FEED_START}:$I${FEED_END},\"*1P*\")/3)*'02_Board_&_Busbars'!$B$16"
             f"+SUMIFS('03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Interconnector\"))"
         ).number_format = "#,##0.0"
         ws_seg.cell(r, 9, f"=IF(A{r}=\"\",0,H{r}/IF(F{r}=\"VBB-Heavy\",'02_Board_&_Busbars'!$D$38,'02_Board_&_Busbars'!$C$38))").number_format = "0.0%"
@@ -1171,7 +1211,8 @@ def generate_workbook():
 
         for sc_idx, i_col in enumerate(["AD", "AE", "AF", "AG"]):
             tap_i = (
-                f"(SUMIFS('03_Feeder_Schedule'!${i_col}${FEED_START}:${i_col}${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\")*'02_Board_&_Busbars'!$B$16"
+                f"((SUMIFS('03_Feeder_Schedule'!${i_col}${FEED_START}:${i_col}${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\",'03_Feeder_Schedule'!$I${FEED_START}:$I${FEED_END},\"<>*1P*\")"
+                f"+SUMIFS('03_Feeder_Schedule'!${i_col}${FEED_START}:${i_col}${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\",'03_Feeder_Schedule'!$I${FEED_START}:$I${FEED_END},\"*1P*\")/3)*'02_Board_&_Busbars'!$B$16"
                 f"+SUMIFS('03_Feeder_Schedule'!${i_col}${FEED_START}:${i_col}${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Interconnector\"))"
             )
             ws_seg.cell(r, 13 + sc_idx,
@@ -1861,7 +1902,7 @@ def generate_workbook():
     try:
         wb.save(final_path)
     except PermissionError:
-        final_path = OUTPUT_PATH.replace(".xlsx", "_v3.0.xlsx")
+        final_path = OUTPUT_PATH.replace(".xlsx", "_v3.1.xlsx")
         wb.save(final_path)
         print(f"NOTE: Original file is open in Excel; saved updated workbook to: {final_path}")
 

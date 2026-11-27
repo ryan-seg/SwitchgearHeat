@@ -28,6 +28,7 @@ window.SGState = (function () {
         category: cloned.category,
         manufacturer: cloned.manufacturer || 'Generic IEC',
         modelSeries: cloned.modelSeries || '',
+        frameSize: cloned.frameSize || cloned.modelSeries || '',
         sourceRef: cloned.sourceRef || '',
         sourceUrl: cloned.sourceUrl || '',
         status: 'active', // 'active' | 'future' | 'standby'
@@ -41,7 +42,7 @@ window.SGState = (function () {
         loadKw: cloned.defaultKw || 0,
         powerFactor: 0.85,
         efficiency: 0.93,
-        phases: '3P',
+        phases: cloned.phases || '3P',
         loadFactor: 1.0,
         // Special fields for incomer / coupler / interconnector
         incomerState: 'closed', // 'closed' | 'open'

@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '3.0.0';
+  const APP_VERSION = '3.1.0';
 
   function loadInitialProject() {
     try {
@@ -230,9 +230,26 @@
     }
   }
 
-  // --- Zoom Helpers ---
-  function setZoom(which, newZoom) {
-    const clamped = Math.min(2.5, Math.max(0.4, Math.round(newZoom * 20) / 20));
+  // --- Zoom & Pan Helpers (Cursor-Centered Mouse-Wheel Zoom + Drag Pan) ---
+  function setZoom(which, newZoom, wheelEvent) {
+    const clamped = Math.min(3.0, Math.max(0.35, Math.round(newZoom * 100) / 100));
+    const oldZoom = which === 'sld' ? sldZoom : gaZoom;
+    if (Math.abs(clamped - oldZoom) < 0.001) return;
+
+    const container = document.getElementById(which === 'sld' ? 'sld-container' : 'ga-container');
+    let anchorRatioX = null;
+    let anchorRatioY = null;
+    let mouseOffsetX = 0;
+    let mouseOffsetY = 0;
+
+    if (wheelEvent && container) {
+      const rect = container.getBoundingClientRect();
+      mouseOffsetX = wheelEvent.clientX - rect.left;
+      mouseOffsetY = wheelEvent.clientY - rect.top;
+      anchorRatioX = (container.scrollLeft + mouseOffsetX) / oldZoom;
+      anchorRatioY = (container.scrollTop + mouseOffsetY) / oldZoom;
+    }
+
     if (which === 'sld') {
       sldZoom = clamped;
       document.getElementById('sld-zoom-pct').textContent = Math.round(sldZoom * 100) + '%';
@@ -241,6 +258,11 @@
       gaZoom = clamped;
       document.getElementById('ga-zoom-pct').textContent = Math.round(gaZoom * 100) + '%';
       applySvgZoom('ga-svg', gaZoom);
+    }
+
+    if (wheelEvent && container && anchorRatioX !== null) {
+      container.scrollLeft = Math.max(0, anchorRatioX * clamped - mouseOffsetX);
+      container.scrollTop = Math.max(0, anchorRatioY * clamped - mouseOffsetY);
     }
   }
 
@@ -263,6 +285,70 @@
     const availH = Math.max(250, container.clientHeight - 28);
     const z = Math.min(availW / bw, availH / bh, 1.5);
     setZoom(which, z);
+    container.scrollLeft = 0;
+    container.scrollTop = 0;
+  }
+
+  function bindCanvasPanAndZoom(containerId, which) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // Direct mouse-wheel zoom centered on cursor (no Ctrl key required)
+    container.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const cur = which === 'sld' ? sldZoom : gaZoom;
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        setZoom(which, cur * factor, e);
+      },
+      { passive: false }
+    );
+
+    // Click-and-drag pan on empty canvas background OR middle-mouse drag anywhere
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let panScrollL = 0;
+    let panScrollT = 0;
+
+    container.addEventListener('pointerdown', (e) => {
+      const isMiddle = e.button === 1;
+      const isInteractive = e.target.closest(
+        '[data-drag-tier], [data-drag-col], [data-quick-del-tier], [data-quick-del-col], [data-select-type], [data-action], [data-explain], button, input, select'
+      );
+      if (!isMiddle && (e.button !== 0 || isInteractive)) return;
+
+      e.preventDefault();
+      isPanning = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      panScrollL = container.scrollLeft;
+      panScrollT = container.scrollTop;
+      container.classList.add('is-panning');
+      try { container.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    container.addEventListener('pointermove', (e) => {
+      if (!isPanning) return;
+      container.scrollLeft = panScrollL - (e.clientX - panStartX);
+      container.scrollTop = panScrollT - (e.clientY - panStartY);
+    });
+
+    const endPan = (e) => {
+      if (!isPanning) return;
+      isPanning = false;
+      container.classList.remove('is-panning');
+      try { container.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    container.addEventListener('pointerup', endPan);
+    container.addEventListener('pointercancel', endPan);
+
+    // Double-click empty canvas background to fit diagram cleanly
+    container.addEventListener('dblclick', (e) => {
+      const isInteractive = e.target.closest('[data-select-type], [data-action], [data-quick-del-tier], [data-quick-del-col]');
+      if (!isInteractive) fitZoom(which);
+    });
   }
 
   // --- SLD & GA Views ---
@@ -554,11 +640,40 @@
     return Array.from(new Set(sorted.map((t) => t.category || 'Other')));
   }
 
-  function renderFilteredTemplateOptions(typeFilter, selectedId, includeKeepCustom) {
-    const sorted = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary);
+  function getFrameSizesForType(typeFilter) {
+    const sorted = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary || []);
     const filtered = typeFilter && typeFilter !== 'ALL'
       ? sorted.filter((t) => (t.category || 'Other') === typeFilter)
       : sorted;
+    const seen = new Set();
+    const frames = [];
+    filtered.forEach((t) => {
+      const f = t.frameSize || t.modelSeries || 'Standard';
+      if (!seen.has(f)) {
+        seen.add(f);
+        frames.push(f);
+      }
+    });
+    return frames;
+  }
+
+  function renderFrameSizeOptions(typeFilter, selectedFrame) {
+    const frames = getFrameSizesForType(typeFilter);
+    let html = `<option value="ALL" ${!selectedFrame || selectedFrame === 'ALL' ? 'selected' : ''}>All Frames (${frames.length})</option>`;
+    frames.forEach((f) => {
+      html += `<option value="${esc(f)}" ${selectedFrame === f ? 'selected' : ''}>${esc(f)}</option>`;
+    });
+    return html;
+  }
+
+  function renderFilteredTemplateOptions(typeFilter, selectedId, includeKeepCustom, frameFilter) {
+    const sorted = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary || []);
+    let filtered = typeFilter && typeFilter !== 'ALL'
+      ? sorted.filter((t) => (t.category || 'Other') === typeFilter)
+      : sorted;
+    if (frameFilter && frameFilter !== 'ALL') {
+      filtered = filtered.filter((t) => (t.frameSize || t.modelSeries || 'Standard') === frameFilter);
+    }
     const groups = new Map();
     filtered.forEach((t) => {
       const grpKey = typeFilter && typeFilter !== 'ALL'
@@ -567,7 +682,7 @@
       if (!groups.has(grpKey)) groups.set(grpKey, []);
       groups.get(grpKey).push(t);
     });
-    let html = includeKeepCustom ? '<option value="">— Select Model / Size to Apply —</option>' : '';
+    let html = includeKeepCustom ? '<option value="">— Select Rating / Model to Apply —</option>' : '';
     if (groups.size <= 1) {
       filtered.forEach((t) => {
         html += `<option value="${esc(t.id)}" ${selectedId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`;
@@ -954,18 +1069,26 @@
 
       <div class="insp-section">
         <div class="insp-section-title">Add Compartment / Interconnector / Spare</div>
-        <div class="field">
-          ${lbl('1. Device / Starter Type', 'tier.template')}
-          <select id="col-add-type">
-            ${getSortedDeviceCategories().map((cat) => `<option value="${esc(cat)}" ${cat === 'DOL Starter' ? 'selected' : ''}>${esc(cat)}</option>`).join('')}
-          </select>
+        <div class="form-grid">
+          <div class="field">
+            ${lbl('1. Component Type', 'tier.template')}
+            <select id="col-add-type">
+              ${getSortedDeviceCategories().map((cat) => `<option value="${esc(cat)}" ${cat === 'DOL Starter' ? 'selected' : ''}>${esc(cat)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            ${lbl('2. Frame Size / Series', 'tier.template')}
+            <select id="col-add-frame">
+              ${renderFrameSizeOptions('DOL Starter', 'ALL')}
+            </select>
+          </div>
         </div>
         <div class="field">
-          ${lbl('2. Model & Size (Filtered by Type)', 'tier.template')}
+          ${lbl('3. Rating & Model (Filtered)', 'tier.template')}
           <select id="col-add-tpl">
-            ${renderFilteredTemplateOptions('DOL Starter', 'dol-22kw', false)}
+            ${renderFilteredTemplateOptions('DOL Starter', 'dol-22kw', false, 'ALL')}
           </select>
-          <span class="field-hint">Sorted by Manufacturer → Model Series → Size (A / kW)</span>
+          <span class="field-hint">Includes 3P (400V) &amp; 1P (230V) devices, Eaton NH000–NH4 HRC fuses &amp; starters</span>
         </div>
         <div class="action-row">
           <button id="col-add-tier-btn" class="btn btn-sm btn-primary">+ Add Selected</button>
@@ -1024,8 +1147,15 @@
       renderAll();
     });
     document.getElementById('col-add-type').addEventListener('change', (e) => {
+      const frameSel = document.getElementById('col-add-frame');
       const tplSel = document.getElementById('col-add-tpl');
-      if (tplSel) tplSel.innerHTML = renderFilteredTemplateOptions(e.target.value, null, false);
+      if (frameSel) frameSel.innerHTML = renderFrameSizeOptions(e.target.value, 'ALL');
+      if (tplSel) tplSel.innerHTML = renderFilteredTemplateOptions(e.target.value, null, false, 'ALL');
+    });
+    document.getElementById('col-add-frame').addEventListener('change', (e) => {
+      const typeSel = document.getElementById('col-add-type');
+      const tplSel = document.getElementById('col-add-tpl');
+      if (tplSel && typeSel) tplSel.innerHTML = renderFilteredTemplateOptions(typeSel.value, null, false, e.target.value);
     });
     document.getElementById('col-add-tier-btn').addEventListener('click', () => {
       addTierToColumn(colIdx, document.getElementById('col-add-tpl').value);
@@ -1085,19 +1215,25 @@
         </div>
         <div class="form-grid">
           <div class="field">
-            ${lbl('1. Device / Starter Type', 'tier.template')}
+            ${lbl('1. Component Type', 'tier.template')}
             <select id="t-tpl-type">
               ${getSortedDeviceCategories().map((cat) => `<option value="${esc(cat)}" ${(tier.category || 'DOL Starter') === cat ? 'selected' : ''}>${esc(cat)}</option>`).join('')}
             </select>
           </div>
           <div class="field">
-            ${lbl('2. Model & Size (Filtered)', 'tier.template')}
-            <select id="t-template">
-              ${renderFilteredTemplateOptions(getSortedDeviceCategories().includes(tier.category) ? tier.category : getSortedDeviceCategories()[0], tier.templateId, true)}
+            ${lbl('2. Frame Size / Series', 'tier.template')}
+            <select id="t-tpl-frame">
+              ${renderFrameSizeOptions(getSortedDeviceCategories().includes(tier.category) ? tier.category : getSortedDeviceCategories()[0], tier.frameSize || 'ALL')}
             </select>
           </div>
         </div>
-        <span class="field-hint">Pick Type first to filter only matching models (e.g. ACB → 1250A Interconnector, DOL 0.75–55 kW, Eaton HRC 2A–1250A)</span>
+        <div class="field" style="margin-top:4px;">
+          ${lbl('3. Rating & Model (Filtered)', 'tier.template')}
+          <select id="t-template">
+            ${renderFilteredTemplateOptions(getSortedDeviceCategories().includes(tier.category) ? tier.category : getSortedDeviceCategories()[0], tier.templateId, true, 'ALL')}
+          </select>
+        </div>
+        <span class="field-hint">Pick Component Type → Frame Size (e.g. NH00 / 250A Frame / 1P DIN) → Rating. Your actual load below is preserved when changing device!</span>
         <div class="action-row">
           <button id="t-up" class="btn btn-sm btn-secondary" ${tierIdx === 0 ? 'disabled' : ''}>↑ Up</button>
           <button id="t-down" class="btn btn-sm btn-secondary" ${tierIdx === col.tiers.length - 1 ? 'disabled' : ''}>↓ Down</button>
@@ -1214,47 +1350,59 @@
       ${
         isFeeder
           ? `<div class="insp-section">
-              <div class="insp-section-title">Operating Load vs Rated Current</div>
-              <div class="form-grid">
+              <div class="insp-section-title">Actual Connected Load (Independent of Device Rating)</div>
+              <div class="form-grid-3">
                 <div class="field">
-                  ${lbl('Load Entry Mode', 'tier.loadMode')}
-                  <select id="t-load-mode">
-                    <option value="kw" ${tier.loadInputMode === 'kw' ? 'selected' : ''}>Motor / Load kW</option>
-                    <option value="amps" ${tier.loadInputMode !== 'kw' ? 'selected' : ''}>Direct Amps (Iop)</option>
+                  ${lbl('Supply Phases', 'tier.loadMode')}
+                  <select id="t-phases">
+                    <option value="3P" ${tier.phases !== '1P' ? 'selected' : ''}>3-Phase (${project.config.voltageV}V)</option>
+                    <option value="1P" ${tier.phases === '1P' ? 'selected' : ''}>1-Phase (${Math.round(project.config.voltageV / Math.sqrt(3))}V)</option>
                   </select>
-                  <span class="field-hint">kW for motors, Amps for sub-DBs</span>
+                  <span class="field-hint">3P motor or 1P load</span>
                 </div>
                 <div class="field">
-                  ${lbl('Duty / Load Factor', 'tier.loadFactor')}
-                  <input type="number" id="t-load-factor" value="${tier.loadFactor != null ? tier.loadFactor : 1.0}" min="0" max="1.25" step="0.05" placeholder="0.85" />
-                  <span class="field-hint">Typ: 0.80–0.90 pumps, 1.0 cont.</span>
+                  ${lbl('Load Entry', 'tier.loadMode')}
+                  <select id="t-load-mode">
+                    <option value="kw" ${tier.loadInputMode === 'kw' ? 'selected' : ''}>Motor / Load kW</option>
+                    <option value="amps" ${tier.loadInputMode !== 'kw' ? 'selected' : ''}>Direct Amps (A)</option>
+                  </select>
+                  <span class="field-hint">kW or direct Amps</span>
+                </div>
+                <div class="field">
+                  ${lbl('Duty Factor', 'tier.loadFactor')}
+                  <input type="number" id="t-load-factor" value="${tier.loadFactor != null ? tier.loadFactor : 1.0}" min="0" max="1.25" step="0.05" placeholder="1.0" />
+                  <span class="field-hint">0.85–1.0 typ.</span>
                 </div>
               </div>
               ${
                 tier.loadInputMode === 'kw'
                   ? `<div class="form-grid-3">
                       <div class="field">
-                        ${lbl('Power (kW)', 'tier.kw')}
-                        <input type="number" id="t-kw" value="${tier.loadKw || 0}" min="0" step="0.5" placeholder="37" />
-                        <span class="field-hint">Ex: 7.5–110</span>
+                        ${lbl('Actual Load (kW)', 'tier.kw')}
+                        <input type="number" id="t-kw" value="${tier.loadKw || 0}" min="0" step="0.5" placeholder="75" />
+                        <span class="field-hint">e.g. 75 kW on 160A fuse</span>
                       </div>
                       <div class="field">
                         ${lbl('PF (cosφ)', 'tier.pf')}
-                        <input type="number" id="t-pf" value="${tier.powerFactor || 0.85}" min="0.2" max="1" step="0.01" placeholder="0.85" />
-                        <span class="field-hint">Typ: 0.85</span>
+                        <input type="number" id="t-pf" value="${tier.powerFactor || 0.85}" min="0.2" max="1" step="0.01" placeholder="0.88" />
+                        <span class="field-hint">Typ: 0.85–0.90</span>
                       </div>
                       <div class="field">
                         ${lbl('Eff (η)', 'tier.eff')}
-                        <input type="number" id="t-eff" value="${tier.efficiency || 0.93}" min="0.2" max="1" step="0.01" placeholder="0.93" />
+                        <input type="number" id="t-eff" value="${tier.efficiency || 0.93}" min="0.2" max="1" step="0.01" placeholder="0.94" />
                         <span class="field-hint">Typ: 0.90–0.95</span>
                       </div>
                     </div>`
                   : `<div class="field">
-                      ${lbl('Base Operating Current (A)', 'tier.amps')}
-                      <input type="number" id="t-amps" value="${tier.operatingCurrentA || 0}" min="0" step="5" placeholder="160" />
-                      <span class="field-hint">Typ: 50%–80% of In (${Math.round(tier.ratedCurrentA * 0.5)}–${Math.round(tier.ratedCurrentA * 0.8)} A)</span>
+                      ${lbl('Actual Operating Current (A)', 'tier.amps')}
+                      <input type="number" id="t-amps" value="${tier.operatingCurrentA || 0}" min="0" step="5" placeholder="130" />
+                      <span class="field-hint">Typ: 50%–85% of ${tier.ratedCurrentA} A (${Math.round(tier.ratedCurrentA * 0.5)}–${Math.round(tier.ratedCurrentA * 0.85)} A)</span>
                     </div>`
               }
+              <div class="load-summary-strip ${tr.isActive && tr.iOp > tier.ratedCurrentA * 1.001 ? 'overload' : ''}">
+                <span><strong>Actual I_op:</strong> ${tr.iOp.toFixed(1)} A (${(dl.loadRatio * 100).toFixed(1)}% of ${tier.ratedCurrentA} A ${tier.frameSize ? esc(tier.frameSize) : 'device'}) · ${tier.phases === '1P' ? '1P ' + Math.round(project.config.voltageV / Math.sqrt(3)) + 'V' : '3P ' + project.config.voltageV + 'V'}</span>
+                ${tier.phases === '1P' ? `<span style="color:var(--text-2);">3P Busbar/Incomer equivalent: ${(tr.iOp / 3).toFixed(1)} A/ph · 2-wire L+N take-off</span>` : ''}
+              </div>
             </div>`
           : ''
       }
@@ -1262,17 +1410,22 @@
       ${
         !isSpacer
           ? `<div class="insp-section">
-              <div class="insp-section-title">Manufacturer Loss Data (P_op = P_fix + P_n·(Iop/In)²)</div>
+              <div class="insp-section-title">Device Frame, Rating &amp; Loss Data (P_op = P_fix + P_n·(Iop/In)²)</div>
+              <div class="field" style="margin-bottom:6px;">
+                <label>Frame Size / Enclosure Format</label>
+                <input type="text" id="t-frame-size" value="${esc(tier.frameSize || tier.modelSeries || '')}" placeholder="e.g. NH00 (3P), 250A Frame, 1P DIN (230V)" />
+                <span class="field-hint">Editable frame size (e.g. 250A Frame with 160A trip/fuse rating)</span>
+              </div>
               <div class="form-grid-3">
                 <div class="field">
-                  ${lbl('Rated In', 'tier.in')}
-                  <input type="number" id="t-in" value="${tier.ratedCurrentA}" min="1" step="10" placeholder="100" />
-                  <span class="field-hint">Frame (A)</span>
+                  ${lbl('Rated In (A)', 'tier.in')}
+                  <input type="number" id="t-in" value="${tier.ratedCurrentA}" min="1" step="10" placeholder="160" />
+                  <span class="field-hint">Fuse / Trip (A)</span>
                 </div>
                 <div class="field">
                   ${lbl('Rated Pn', 'tier.pn')}
                   <input type="number" id="t-pn" value="${tier.ratedLossW}" min="0" step="1" ${tier.subComponents ? 'disabled title="Summed from sub-components below"' : ''} placeholder="42" />
-                  <span class="field-hint">3P W @ In</span>
+                  <span class="field-hint">${tier.phases === '1P' ? '1P' : '3P'} W @ In</span>
                 </div>
                 <div class="field">
                   ${lbl('Fixed W', 'tier.pfix')}
@@ -1359,6 +1512,7 @@
       renderAll();
     });
     on('t-height', 'change', (e) => { pushUndo(); tier.heightMm = Math.max(120, Number(e.target.value) || 250); renderAll(); });
+    on('t-frame-size', 'change', (e) => { pushUndo(); tier.frameSize = e.target.value.trim(); renderAll(); });
     on('t-in', 'change', (e) => { pushUndo(); tier.ratedCurrentA = Math.max(1, Number(e.target.value) || 100); renderAll(); });
     on('t-pn', 'change', (e) => { pushUndo(); tier.ratedLossW = Math.max(0, Number(e.target.value) || 0); renderAll(); });
     on('t-pfix', 'change', (e) => { pushUndo(); tier.fixedLossW = Math.max(0, Number(e.target.value) || 0); renderAll(); });
@@ -1373,8 +1527,15 @@
     on('t-ic-right', 'click', () => relocateInterconnector(colIdx, tierIdx, 'right_of_board'));
     on('t-ic-switch-n1', 'click', () => { project.activeScenario = 'n1_transfer'; renderAll(); });
     on('t-tpl-type', 'change', (e) => {
+      const frameSel = document.getElementById('t-tpl-frame');
       const tplSel = document.getElementById('t-template');
-      if (tplSel) tplSel.innerHTML = renderFilteredTemplateOptions(e.target.value, tier.templateId, true);
+      if (frameSel) frameSel.innerHTML = renderFrameSizeOptions(e.target.value, 'ALL');
+      if (tplSel) tplSel.innerHTML = renderFilteredTemplateOptions(e.target.value, tier.templateId, true, 'ALL');
+    });
+    on('t-tpl-frame', 'change', (e) => {
+      const typeSel = document.getElementById('t-tpl-type');
+      const tplSel = document.getElementById('t-template');
+      if (tplSel && typeSel) tplSel.innerHTML = renderFilteredTemplateOptions(typeSel.value, tier.templateId, true, e.target.value);
     });
     on('t-source-ref', 'change', (e) => { pushUndo(); tier.sourceRef = e.target.value; window.SGState.saveProject(project); });
     on('t-source-url', 'change', (e) => { pushUndo(); tier.sourceUrl = e.target.value.trim(); renderAll(true); });
@@ -1388,6 +1549,7 @@
     on('t-cable-csa', 'change', (e) => { pushUndo(); tier.cableSpec.csaMm2 = Math.max(10, Number(e.target.value) || 240); renderAll(); });
     on('t-cable-len', 'change', (e) => { pushUndo(); tier.cableSpec.internalLengthM = Math.max(0, Number(e.target.value) || 0); renderAll(); });
 
+    on('t-phases', 'change', (e) => { pushUndo(); tier.phases = e.target.value; renderAll(); });
     on('t-load-mode', 'change', (e) => { pushUndo(); tier.loadInputMode = e.target.value; renderAll(); });
     on('t-load-factor', 'change', (e) => { pushUndo(); tier.loadFactor = Math.max(0, Number(e.target.value)); renderAll(); });
     on('t-kw', 'change', (e) => { pushUndo(); tier.loadKw = Math.max(0, Number(e.target.value) || 0); renderAll(); });
@@ -1400,10 +1562,14 @@
       if (!tpl) return;
       pushUndo();
       const c = window.SGCatalog.cloneTemplate(tpl);
+      const hadExistingLoad =
+        (tier.loadInputMode === 'kw' && Number(tier.loadKw) > 0) ||
+        (tier.loadInputMode !== 'kw' && Number(tier.operatingCurrentA) > 0);
       tier.templateId = c.id;
       tier.category = c.category;
       tier.manufacturer = c.manufacturer || 'Generic IEC';
       tier.modelSeries = c.modelSeries || '';
+      tier.frameSize = c.frameSize || c.modelSeries || '';
       tier.sourceRef = c.sourceRef || '';
       tier.sourceUrl = c.sourceUrl || '';
       tier.role = c.role || 'feeder';
@@ -1413,7 +1579,12 @@
       tier.fixedLossW = c.fixedLossW || 0;
       tier.subComponents = c.subComponents || null;
       tier.heightMm = c.defaultHeightMm || tier.heightMm;
-      if (c.defaultKw) {
+      if (c.phases) {
+        tier.phases = c.phases;
+      }
+      // Preserve user's entered actual load (e.g. 75 kW motor when swapping to a 160A HRC fuse);
+      // only populate defaultKw if no actual load has been entered yet.
+      if (c.defaultKw && !hadExistingLoad) {
         tier.loadInputMode = 'kw';
         tier.loadKw = c.defaultKw;
       }
@@ -2813,20 +2984,11 @@
     document.getElementById('sld-export-svg').addEventListener('click', () => {
       window.SGReport.exportSVG('sld-svg', `${project.meta.projectNumber || 'switchgear'}_SLD.svg`);
     });
-    document.getElementById('sld-zoom-in').addEventListener('click', () => setZoom('sld', sldZoom + 0.15));
-    document.getElementById('sld-zoom-out').addEventListener('click', () => setZoom('sld', sldZoom - 0.15));
+    document.getElementById('sld-zoom-in').addEventListener('click', () => setZoom('sld', sldZoom * 1.15));
+    document.getElementById('sld-zoom-out').addEventListener('click', () => setZoom('sld', sldZoom / 1.15));
     document.getElementById('sld-zoom-fit').addEventListener('click', () => fitZoom('sld'));
     document.getElementById('sld-zoom-reset').addEventListener('click', () => setZoom('sld', 1.0));
-    document.getElementById('sld-container').addEventListener(
-      'wheel',
-      (e) => {
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          setZoom('sld', sldZoom + (e.deltaY < 0 ? 0.1 : -0.1));
-        }
-      },
-      { passive: false }
-    );
+    bindCanvasPanAndZoom('sld-container', 'sld');
 
     // GA toolbar buttons & zoom
     document.getElementById('ga-opt-heatmap').addEventListener('change', (e) => {
@@ -2845,20 +3007,11 @@
     document.getElementById('ga-export-svg').addEventListener('click', () => {
       window.SGReport.exportSVG('ga-svg', `${project.meta.projectNumber || 'switchgear'}_GA.svg`);
     });
-    document.getElementById('ga-zoom-in').addEventListener('click', () => setZoom('ga', gaZoom + 0.15));
-    document.getElementById('ga-zoom-out').addEventListener('click', () => setZoom('ga', gaZoom - 0.15));
+    document.getElementById('ga-zoom-in').addEventListener('click', () => setZoom('ga', gaZoom * 1.15));
+    document.getElementById('ga-zoom-out').addEventListener('click', () => setZoom('ga', gaZoom / 1.15));
     document.getElementById('ga-zoom-fit').addEventListener('click', () => fitZoom('ga'));
     document.getElementById('ga-zoom-reset').addEventListener('click', () => setZoom('ga', 1.0));
-    document.getElementById('ga-container').addEventListener(
-      'wheel',
-      (e) => {
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          setZoom('ga', gaZoom + (e.deltaY < 0 ? 0.1 : -0.1));
-        }
-      },
-      { passive: false }
-    );
+    bindCanvasPanAndZoom('ga-container', 'ga');
 
     // File Save / Load / Share / Export / Print
     document.getElementById('btn-save-json').addEventListener('click', () => window.SGReport.exportJSON(project));

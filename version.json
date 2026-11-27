@@ -1,5 +1,5 @@
 {
-  "version": "3.0.0",
+  "version": "3.1.0",
   "released": "2026-11-27",
-  "notes": "Comprehensive technical & UX release: automated busbar/device/geometry overload checks, unpowered busbar section physics, exact VSD IGBT worked breakdown in Analyse modal, 2-step cascading dropdowns, widened numeric inputs, and aligned 10-sheet macro-free Excel export."
+  "notes": "Single-phase (1P 230V) devices & physics, cursor-centered mouse-wheel zoom & drag-to-pan on SLD/GA, 3-step Component Type -> Frame Size -> Rating selector, independent actual load entry, and 10-sheet Excel alignment."
 }

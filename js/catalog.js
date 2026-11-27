@@ -183,6 +183,8 @@ window.SGCatalog = (function () {
       category: 'ACB',
       manufacturer: 'Generic IEC',
       modelSeries,
+      frameSize: `${amps}A Frame (${modelSeries.replace('IEC 60947-2 ', '')})`,
+      phases: '3P',
       sizeValue: amps,
       sizeLabel: `${amps} A`,
       name: `${labelPrefix} ${amps}A Drawout (3P/4P)`,
@@ -202,11 +204,14 @@ window.SGCatalog = (function () {
   }
 
   function makeMccb(id, amps, modelSeries, pn, pfix, h, notes) {
+    const frameLabel = amps <= 125 ? '125A Frame (3P)' : `${amps}A Frame (3P)`;
     return {
       id,
       category: 'MCCB',
       manufacturer: 'Generic IEC',
       modelSeries,
+      frameSize: frameLabel,
+      phases: '3P',
       sizeValue: amps,
       sizeLabel: `${amps} A`,
       name: `MCCB ${amps}A (${modelSeries})`,
@@ -227,6 +232,8 @@ window.SGCatalog = (function () {
       category: 'MCB',
       manufacturer: 'Generic IEC',
       modelSeries: 'IEC 60898-1 3P',
+      frameSize: '3P DIN (400V)',
+      phases: '3P',
       sizeValue: amps,
       sizeLabel: `${amps} A`,
       name: `MCB ${amps}A 3P (Miniature Circuit Breaker)`,
@@ -241,6 +248,107 @@ window.SGCatalog = (function () {
     };
   }
 
+  function makeMcb1P(id, amps, pn, h) {
+    return {
+      id,
+      category: 'MCB',
+      manufacturer: 'Generic IEC',
+      modelSeries: 'IEC 60898-1 1P (230V)',
+      frameSize: '1P DIN (230V)',
+      phases: '1P',
+      sizeValue: amps,
+      sizeLabel: `${amps} A (1P)`,
+      name: `MCB ${amps}A 1P (230V Single-Phase)`,
+      role: 'feeder',
+      ratedCurrentA: amps,
+      ratedLossW: pn,
+      fixedLossW: 0,
+      defaultHeightMm: h,
+      notes: `Single-phase 230V ${amps}A 1-Pole MCB (${pn.toFixed(1)}W at In) for lighting, sockets, trace heating, or control supplies`,
+      sourceRef: 'IEC 60898-1 Table 6 / IEC TR 60890 Typical 1P MCB Losses',
+      sourceUrl: SOURCE_URLS.iec60898_1,
+    };
+  }
+
+  function makeRcbo1P(id, amps, pn, pfix, h) {
+    return {
+      id,
+      category: 'RCBO (1P+N)',
+      manufacturer: 'Generic IEC',
+      modelSeries: 'IEC 61009-1 1P+N (230V)',
+      frameSize: '1P+N DIN (230V)',
+      phases: '1P',
+      sizeValue: amps,
+      sizeLabel: `${amps} A (1P+N)`,
+      name: `RCBO ${amps}A 1P+N 30mA (230V Single-Phase)`,
+      role: 'feeder',
+      ratedCurrentA: amps,
+      ratedLossW: pn,
+      fixedLossW: pfix,
+      defaultHeightMm: h,
+      notes: `Single-phase 230V ${amps}A 1P+N RCBO (${pn.toFixed(1)}W poles + ${pfix.toFixed(1)}W electronic sensing)`,
+      sourceRef: 'IEC 61009-1 Typical 1P+N RCBO Power Loss Data',
+      sourceUrl: SOURCE_URLS.iec60898_1,
+    };
+  }
+
+  function makeHeater1P(id, amps, kw, mcbW, contW, coilW, h) {
+    const totalVar = Math.round((mcbW + contW) * 10) / 10;
+    return {
+      id,
+      category: '1P Control / Heater',
+      manufacturer: 'Generic IEC',
+      modelSeries: '1P+N Contactor Circuit (230V)',
+      frameSize: '1P+N DIN / Contactor (230V)',
+      phases: '1P',
+      sizeValue: amps,
+      sizeLabel: `${amps} A (${kw} kW 1P)`,
+      name: `1P Contactor / Heater Circuit ${amps}A (${kw} kW, 230V)`,
+      role: 'feeder',
+      ratedCurrentA: amps,
+      ratedLossW: totalVar,
+      fixedLossW: coilW,
+      defaultKw: kw,
+      defaultHeightMm: h,
+      notes: `Single-phase 230V ${amps}A circuit: 1P MCB + 2P Contactor + Holding Coil (lighting, trace heating, space heaters)`,
+      sourceRef: 'IEC 60947-4-1 / IEC 60898-1 Single-Phase Contactor Circuit Losses',
+      sourceUrl: SOURCE_URLS.iec60947_4_1,
+      subComponents: [
+        { name: `1P MCB Isolator (${amps}A)`, ratedCurrentA: amps, ratedLossW: mcbW, fixedLossW: 0 },
+        { name: `2P AC-1 Contactor (${amps}A Poles + Coil)`, ratedCurrentA: amps, ratedLossW: contW, fixedLossW: coilW },
+      ],
+    };
+  }
+
+  function makeDol1P(id, kw, frameA, mcbW, contW, coilW, olW, h) {
+    const totalVar = Math.round((mcbW + contW + olW) * 10) / 10;
+    return {
+      id,
+      category: 'DOL Starter',
+      manufacturer: 'Generic IEC',
+      modelSeries: 'IEC 60947-4-1 1P DOL (230V)',
+      frameSize: '1P DOL (230V)',
+      phases: '1P',
+      sizeValue: kw,
+      sizeLabel: `${kw} kW 1P (${frameA}A)`,
+      name: `DOL Starter 1P ${kw} kW (230V, ${frameA}A frame)`,
+      role: 'feeder',
+      ratedCurrentA: frameA,
+      ratedLossW: totalVar,
+      fixedLossW: coilW,
+      defaultKw: kw,
+      defaultHeightMm: h,
+      notes: `Single-phase 230V ${kw} kW Direct-On-Line motor starter: 1P MCB + 2P Contactor + Overload + Coil`,
+      sourceRef: 'IEC 60947-4-1 Single-Phase DOL Starter Dissipation',
+      sourceUrl: SOURCE_URLS.iec60947_4_1,
+      subComponents: [
+        { name: `1P MCB / MPCB Isolator (${frameA}A)`, ratedCurrentA: frameA, ratedLossW: mcbW, fixedLossW: 0 },
+        { name: `2P Contactor (${frameA}A Poles + Coil)`, ratedCurrentA: frameA, ratedLossW: contW, fixedLossW: coilW },
+        { name: 'Thermal Overload Relay (1P)', ratedCurrentA: frameA, ratedLossW: olW, fixedLossW: 0 },
+      ],
+    };
+  }
+
   function makeDol(id, kw, frameA, mpcbW, contW, coilW, olW, auxW, h) {
     const totalVar = Math.round((mpcbW + contW + olW) * 10) / 10;
     const totalFix = Math.round((coilW + auxW) * 10) / 10;
@@ -249,6 +357,8 @@ window.SGCatalog = (function () {
       category: 'DOL Starter',
       manufacturer: 'Generic IEC',
       modelSeries: 'IEC 60947-4-1 AC-3 DOL',
+      frameSize: '3P DOL (400V)',
+      phases: '3P',
       sizeValue: kw,
       sizeLabel: `${kw} kW (${frameA}A)`,
       name: `DOL Starter ${kw} kW (${frameA}A frame)`,
@@ -278,6 +388,8 @@ window.SGCatalog = (function () {
       category: 'Star-Delta Starter',
       manufacturer: 'Generic IEC',
       modelSeries: 'IEC 60947-4-1 Star-Delta',
+      frameSize: `${frameA}A Frame (3P)`,
+      phases: '3P',
       sizeValue: kw,
       sizeLabel: `${kw} kW (${frameA}A)`,
       name: `Star-Delta Starter ${kw} kW (${frameA}A frame)`,
@@ -308,6 +420,8 @@ window.SGCatalog = (function () {
       category: 'Soft Starter',
       manufacturer: 'Generic IEC',
       modelSeries,
+      frameSize: `${suffix} (${frameA}A)`,
+      phases: '3P',
       sizeValue: kw,
       sizeLabel: `${kw} kW (${frameA}A)`,
       name: `Soft Starter ${kw} kW (${suffix}, ${frameA}A)`,
@@ -344,6 +458,8 @@ window.SGCatalog = (function () {
       category: 'VSD / Inverter',
       manufacturer: 'Generic IEC',
       modelSeries: 'IEC 61800-9-2 VSD (IE2)',
+      frameSize: `${frameA}A Frame (3P VSD)`,
+      phases: '3P',
       sizeValue: kw,
       sizeLabel: `${kw} kW (${frameA}A)`,
       name: `VSD / Inverter Drive ${kw} kW (${pctLoss.toFixed(1)}% loss)`,
@@ -410,6 +526,18 @@ window.SGCatalog = (function () {
     makeDol('dol-37kw',   37.0, 100, 24.0, 21.0, 12.0, 10.0, 6.0, 300),
     makeDol('dol-45kw',   45.0, 125, 28.0, 27.0, 13.5, 11.0, 6.5, 320),
     makeDol('dol-55kw',   55.0, 160, 32.0, 34.0, 15.0, 12.0, 7.0, 350),
+    // Single-Phase 230V DOL Starters
+    makeDol1P('dol1p-0.75kw', 0.75, 10, 1.8, 1.2, 4.0, 2.0, 170),
+    makeDol1P('dol1p-1.5kw',  1.5,  16, 2.2, 1.8, 4.5, 2.5, 170),
+    makeDol1P('dol1p-2.2kw',  2.2,  20, 2.5, 2.4, 5.0, 3.0, 180),
+    makeDol1P('dol1p-3kw',    3.0,  25, 3.0, 3.0, 5.5, 3.5, 180),
+
+    // =========================================================================
+    // 2b. 1P Control, Lighting & Trace Heating Contactor Circuits (230V 1P+N)
+    // =========================================================================
+    makeHeater1P('htr1p-16', 16, 3.5, 2.2, 1.8, 4.5, 160),
+    makeHeater1P('htr1p-32', 32, 7.0, 3.3, 3.4, 6.0, 170),
+    makeHeater1P('htr1p-63', 63, 14.0, 5.4, 6.5, 8.0, 190),
 
     // =========================================================================
     // 3. HRC Fuse-Switches — Complete Eaton Bussmann NH gG Series (2A – 1250A)
@@ -455,6 +583,8 @@ window.SGCatalog = (function () {
         category: 'HRC Fuse-Switch',
         manufacturer: 'Eaton Bussmann',
         modelSeries: `${f.size} gG HRC`,
+        frameSize: `${f.size} (3P)`,
+        phases: '3P',
         sizeValue: f.amps,
         sizeLabel: `${f.amps} A`,
         name: `Eaton ${f.part} — ${f.amps}A ${f.size} gG HRC (${f.wLink}W/link)`,
@@ -472,9 +602,43 @@ window.SGCatalog = (function () {
         ],
       };
     }),
+    // Single-Phase 230V Eaton Bussmann NH gG HRC Fuse-Switches (1 link + 1P base)
+    ...[
+      { id: 'hrc1p-16',  part: '16NHG000B',  size: 'NH000', amps: 16,  wLink: 2.3,  wBase1P: 0.6, h: 150 },
+      { id: 'hrc1p-32',  part: '32NHG000B',  size: 'NH000', amps: 32,  wLink: 3.4,  wBase1P: 0.9, h: 150 },
+      { id: 'hrc1p-63',  part: '63NHG000B',  size: 'NH000', amps: 63,  wLink: 4.6,  wBase1P: 1.6, h: 160 },
+      { id: 'hrc1p-100', part: '100NHG000B', size: 'NH000', amps: 100, wLink: 7.4,  wBase1P: 2.6, h: 180 },
+      { id: 'hrc1p-125', part: '125NHG00B',  size: 'NH00',  amps: 125, wLink: 8.8,  wBase1P: 3.2, h: 200 },
+      { id: 'hrc1p-160', part: '160NHG00B',  size: 'NH00',  amps: 160, wLink: 10.0, wBase1P: 4.0, h: 220 },
+    ].map((f) => {
+      const totalPn = Math.round((f.wLink + f.wBase1P) * 10) / 10;
+      return {
+        id: f.id,
+        category: 'HRC Fuse-Switch',
+        manufacturer: 'Eaton Bussmann',
+        modelSeries: `1P ${f.size} gG HRC (230V)`,
+        frameSize: `${f.size} (1P 230V)`,
+        phases: '1P',
+        sizeValue: f.amps,
+        sizeLabel: `${f.amps} A (1P)`,
+        name: `Eaton ${f.part} 1P — ${f.amps}A ${f.size} gG HRC (230V, ${f.wLink}W/link)`,
+        role: 'feeder',
+        ratedCurrentA: f.amps,
+        ratedLossW: totalPn,
+        fixedLossW: 0,
+        defaultHeightMm: f.h,
+        notes: `Single-phase 230V Eaton Bussmann DS 10164: 1×${f.part} (${f.wLink}W) + 1P base contacts (${f.wBase1P}W)`,
+        sourceRef: `Eaton Bussmann Data Sheet 10164 — ${f.part} (1P ${f.size} gG)`,
+        sourceUrl: SOURCE_URLS.eatonNH,
+        subComponents: [
+          { name: `1× Eaton ${f.part} HRC Link (${f.wLink}W)`, ratedCurrentA: f.amps, ratedLossW: f.wLink, fixedLossW: 0 },
+          { name: `${f.size} 1P Fuse-Base Contacts`, ratedCurrentA: f.amps, ratedLossW: f.wBase1P, fixedLossW: 0 },
+        ],
+      };
+    }),
 
     // =========================================================================
-    // 4. MCBs — Miniature Circuit Breakers (6A – 125A)
+    // 4. MCBs — Miniature Circuit Breakers (3P 6A–125A + 1P 230V 6A–63A)
     // =========================================================================
     makeMcb('mcb-6',   6,   4.5,  150),
     makeMcb('mcb-10',  10,  5.4,  150),
@@ -486,6 +650,25 @@ window.SGCatalog = (function () {
     makeMcb('mcb-80',  80,  21.0, 160),
     makeMcb('mcb-100', 100, 25.5, 160),
     makeMcb('mcb-125', 125, 31.5, 170),
+    makeMcb1P('mcb1p-6',  6,  1.5, 140),
+    makeMcb1P('mcb1p-10', 10, 1.8, 140),
+    makeMcb1P('mcb1p-16', 16, 2.2, 140),
+    makeMcb1P('mcb1p-20', 20, 2.5, 140),
+    makeMcb1P('mcb1p-25', 25, 2.9, 140),
+    makeMcb1P('mcb1p-32', 32, 3.3, 140),
+    makeMcb1P('mcb1p-40', 40, 3.9, 140),
+    makeMcb1P('mcb1p-50', 50, 4.6, 150),
+    makeMcb1P('mcb1p-63', 63, 5.4, 150),
+
+    // =========================================================================
+    // 4b. RCBOs — Single-Phase 1P+N Residual Current Breakers (230V 6A–40A)
+    // =========================================================================
+    makeRcbo1P('rcbo1p-6',  6,  2.4, 0.5, 150),
+    makeRcbo1P('rcbo1p-10', 10, 2.8, 0.5, 150),
+    makeRcbo1P('rcbo1p-16', 16, 3.4, 0.5, 150),
+    makeRcbo1P('rcbo1p-20', 20, 3.9, 0.5, 150),
+    makeRcbo1P('rcbo1p-32', 32, 5.1, 0.5, 150),
+    makeRcbo1P('rcbo1p-40', 40, 6.2, 0.5, 150),
 
     // =========================================================================
     // 5. MCCBs — Moulded Case Circuit Breakers (16A – 1600A)
