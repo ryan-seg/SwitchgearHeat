@@ -704,6 +704,9 @@ window.SGState = (function () {
           : `F-${(cIdx + 1) * 100 + (fCount++)}`;
 
         const overrides = { tag };
+        const cellPhase = (gCol.phases && gCol.phases[tIdx]) || tpl.phases || '3P';
+        const rawLoad = gCol.loads && gCol.loads[tIdx];
+        const hasManualAmps = rawLoad !== '' && rawLoad != null && Number.isFinite(Number(rawLoad));
         if (isInc) {
           overrides.incomerState = 'closed';
         } else if (isCpl) {
@@ -712,7 +715,12 @@ window.SGState = (function () {
           overrides.normalTransferCurrentA = 0;
           overrides.n1TransferCurrentA = Number(sm.n1TransferA || 850);
         } else if (!isSp) {
-          if (tpl.defaultKw) {
+          overrides.phases = cellPhase;
+          if (hasManualAmps) {
+            overrides.loadInputMode = 'amps';
+            overrides.operatingCurrentA = Math.max(0, Number(rawLoad));
+            overrides.loadFactor = 1.0;
+          } else if (tpl.defaultKw) {
             overrides.loadInputMode = 'kw';
             overrides.loadKw = tpl.defaultKw;
             overrides.powerFactor = tpl.category === 'VSD / Inverter' ? 0.95 : 0.86;
@@ -938,6 +946,108 @@ window.SGState = (function () {
 
     project.columns = cols;
     project.uiMode = 'detailed';
+    return project;
+  }
+
+  /**
+   * Reverse Sync: Summarize the current Detailed Mode switchboard cleanly back into
+   * Simple Mode's Tier-by-Tier Grid (preserving exact devices, 3P/1P phases & operating Amps)
+   * so engineers can view a simplified high-level summary & ventilation verdict without extra clutter.
+   */
+  function syncDetailedToSimple(project) {
+    ensureExtras(project);
+    const sm = project.simpleMode;
+    const cfg = project.config || {};
+    const bb = project.mainBusbar || {};
+    const V = Number(cfg.voltageV || 400);
+    const presets = window.SGCatalog.BUSBAR_PRESETS.filter((p) => !p.id.startsWith('bb-v'));
+
+    // Match closest standard busbar preset by rated current
+    const targetA = Number(bb.ratedCurrentA) || 1250;
+    let bestPreset = presets[0];
+    let bestDiff = Infinity;
+    presets.forEach((p) => {
+      const d = Math.abs(p.ratedCurrentA - targetA);
+      if (d < bestDiff) {
+        bestDiff = d;
+        bestPreset = p;
+      }
+    });
+    sm.busbarPresetId = bestPreset.id;
+    sm.material = bb.material || 'cu_100';
+    sm.busbarTempC = Number(bb.operatingTempC != null ? bb.operatingTempC : 70);
+    sm.manualSFactor = Number(bb.manualSFactor || 1.2);
+    sm.rdf = Number(cfg.diversityFactorRDF != null ? cfg.diversityFactorRDF : 0.9);
+    sm.futureGrowthPct = Number(cfg.globalFutureGrowthPct != null ? cfg.globalFutureGrowthPct : 15);
+
+    const srcCols = (project.columns || []).slice(0, 8);
+    let maxTiers = 4;
+    let dolCount = 0;
+    let vsdCount = 0;
+    let feederCount = 0;
+    let incCount = 0;
+    let hasCoupler = false;
+    let hasIc = false;
+    let icN1 = sm.n1TransferA || 850;
+
+    const newGrid = srcCols.map((col, cIdx) => {
+      const tiers = ['', '', '', '', '', ''];
+      const loads = ['', '', '', '', '', ''];
+      const phases = ['', '', '', '', '', ''];
+      const colTiers = (col.tiers || []).slice(0, 6);
+      if (colTiers.length > maxTiers) maxTiers = Math.min(6, colTiers.length);
+
+      colTiers.forEach((tier, tIdx) => {
+        tiers[tIdx] = tier.templateId || '';
+        phases[tIdx] = tier.phases || '3P';
+        if (tier.role === 'incomer') {
+          incCount += 1;
+        } else if (tier.role === 'bus_coupler') {
+          hasCoupler = true;
+        } else if (tier.role === 'interconnector') {
+          hasIc = true;
+          if (Number(tier.n1TransferCurrentA) > 0) icN1 = Number(tier.n1TransferCurrentA);
+        } else if (tier.role === 'feeder') {
+          if (tier.category === 'VSD / Inverter') vsdCount += 1;
+          else if (tier.category && tier.category.includes('Starter')) dolCount += 1;
+          else feederCount += 1;
+
+          // Carry exact operating current (0 A if Standby/Future so Normal summary matches Detailed!)
+          if (tier.status === 'standby' || tier.status === 'future') {
+            loads[tIdx] = 0;
+          } else {
+            const iOp = window.SGPhysics.calcFeederCurrent(tier, V);
+            loads[tIdx] = Math.round(iOp * 10) / 10;
+          }
+        }
+      });
+
+      return {
+        name: col.name || `COL-0${cIdx + 1}`,
+        tiers,
+        loads,
+        phases,
+      };
+    });
+
+    sm.inputStyle = 'tier_grid';
+    sm.tierRows = Math.max(4, Math.min(6, maxTiers));
+    sm.tierGrid = newGrid.length >= 2 ? newGrid : createDefaultSimpleTierGrid();
+    sm.columnCount = sm.tierGrid.length;
+    sm.dolCount = dolCount;
+    sm.vsdCount = vsdCount;
+    sm.feederCount = feederCount;
+    sm.n1TransferA = icN1;
+    sm.topology =
+      incCount >= 2 || hasCoupler
+        ? hasIc
+          ? 'dual_coupler_interconn'
+          : 'dual_coupler'
+        : hasIc
+        ? 'single_interconn'
+        : 'single';
+
+    project.uiMode = 'simple';
     return project;
   }
 
@@ -1176,6 +1286,7 @@ window.SGState = (function () {
     createDefaultSimpleMode,
     createDefaultRoomConfig,
     applySimpleToDetailed,
+    syncDetailedToSimple,
     ensureExtras,
     createDefaultReportConfig,
     applyReportPreset,

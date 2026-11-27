@@ -1,5 +1,5 @@
 {
-  "version": "3.2.0",
+  "version": "3.4.0",
   "released": "2026-11-27",
-  "notes": "Tier-by-Tier Simple Mode with rules-of-thumb ventilation assessment and live graphical SLD/GA preview, plus CAD-style graphical Excel SLD/GA tabs with embedded thermal charts."
+  "notes": "Reverse Detailed -> Simple Mode sync, interactive Calculation Help & Step-by-Step Breakdown modal with full source references, and live formula-driven step-by-step worked breakdown on Excel 08_Calc_Help_&_Method."
 }

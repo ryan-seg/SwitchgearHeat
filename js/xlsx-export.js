@@ -476,14 +476,18 @@ window.SGXlsxExport = (function () {
     const smColLetters = ['B', 'C', 'D', 'E', 'F', 'G'];
     for (let tIdx = 0; tIdx < 6; tIdx++) {
       for (let cIdx = 0; cIdx < 6; cIdx++) {
-        const ref = `${smColLetters[cIdx]}${49 + tIdx}`;
+        const colL = smColLetters[cIdx];
         const gCol = smGrid[cIdx];
         const tplId = gCol && Array.isArray(gCol.tiers) ? gCol.tiers[tIdx] : '';
         if (tplId) {
-          setCellValue(docSmp, mapSmp, ref, ensureLibraryMatch(findTpl(tplId), ''));
+          setCellValue(docSmp, mapSmp, `${colL}${49 + tIdx}`, ensureLibraryMatch(findTpl(tplId), ''));
         } else {
-          setCellValue(docSmp, mapSmp, ref, '');
+          setCellValue(docSmp, mapSmp, `${colL}${49 + tIdx}`, '');
         }
+        const ovAmps = gCol && Array.isArray(gCol.loads) && gCol.loads[tIdx] !== '' && gCol.loads[tIdx] != null ? Number(gCol.loads[tIdx]) : '';
+        const ovPhase = gCol && Array.isArray(gCol.phases) && gCol.phases[tIdx] ? gCol.phases[tIdx] : '';
+        setCellValue(docSmp, mapSmp, `${colL}${59 + tIdx}`, ovAmps);
+        setCellValue(docSmp, mapSmp, `${colL}${67 + tIdx}`, ovPhase);
       }
     }
 

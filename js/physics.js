@@ -1124,6 +1124,10 @@ window.SGPhysics = (function () {
             ? `M-${(cIdx + 1) * 100 + tIdx + 1}`
             : `F-${(cIdx + 1) * 100 + fCount++}`;
 
+          const cellPhase = (gCol.phases && gCol.phases[tIdx]) || tpl.phases || '3P';
+          const rawLoad = gCol.loads && gCol.loads[tIdx];
+          const hasManualAmps = !isInc && !isIc && !isCpl && !isSp && rawLoad !== '' && rawLoad != null && Number.isFinite(Number(rawLoad));
+
           tiers.push({
             id: `sm-${cIdx}-${tIdx}`,
             gridCol: cIdx,
@@ -1140,13 +1144,13 @@ window.SGPhysics = (function () {
             ratedLossW: tpl.ratedLossW,
             fixedLossW: tpl.fixedLossW || 0,
             subComponents: tpl.subComponents ? JSON.parse(JSON.stringify(tpl.subComponents)) : null,
-            phases: tpl.phases || '3P',
-            loadInputMode: tpl.defaultKw ? 'kw' : 'amps',
+            phases: cellPhase,
+            loadInputMode: hasManualAmps ? 'amps' : (tpl.defaultKw ? 'kw' : 'amps'),
             loadKw: tpl.defaultKw || 0,
-            operatingCurrentA: Math.round(tpl.ratedCurrentA * loadPct),
+            operatingCurrentA: hasManualAmps ? Math.max(0, Number(rawLoad)) : Math.round(tpl.ratedCurrentA * loadPct),
             powerFactor: tpl.category === 'VSD / Inverter' ? 0.95 : 0.86,
             efficiency: tpl.category === 'VSD / Inverter' ? 0.94 : 0.93,
-            loadFactor: tpl.defaultKw ? loadPct : 1.0,
+            loadFactor: hasManualAmps ? 1.0 : (tpl.defaultKw ? loadPct : 1.0),
             incomerState: 'closed',
             couplerState: 'open',
             normalTransferCurrentA: 0,
@@ -1195,9 +1199,9 @@ window.SGPhysics = (function () {
           icA: ev.isN1Transfer ? Number(sm.n1TransferA || 0) : 0,
           hbbPeakWPerM: t.maxHbbWPerM,
           busbarW: t.totalBusbarW,
-          hbbLossW: t.totalHbbLossW,
-          vbbLossW: t.totalVbbLossW,
-          jointsW: t.totalJointsTakeoffW,
+          hbbLossW: t.totalHbbLossW || 0,
+          vbbLossW: t.totalVbbLossW || 0,
+          jointsW: t.totalTakeoffAndJointW || 0,
           devicesW: t.totalDevicesW,
           dolLoss,
           vsdLoss,

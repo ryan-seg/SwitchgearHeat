@@ -553,22 +553,25 @@ def generate_workbook():
             cell = ws_smp.cell(r_g, cc, sm_grid_defaults[t_idx][c_idx])
             cell.font = FONT_INPUT; cell.fill = FILL_INPUT; cell.alignment = ALIGN_L; cell.border = BORDER_CELL
 
-            # Hidden helper columns I..N (9..14): Rule-of-Thumb Normal Amps per cell (1P weighted /3 on 3P bus)
+            # Hidden helper columns I..N (9..14): Rule-of-Thumb or Per-Cell Override Amps (1P weighted /3 on 3P bus)
+            r_ov_a = 59 + t_idx
+            r_ov_p = 67 + t_idx
             h_i_col = 9 + c_idx
             role_e = f"IFERROR(INDEX({lib_role_rng},MATCH({cl}{r_g},{lib_name_rng},0)),\"\")"
             in_e   = f"IFERROR(INDEX({lib_in_rng},MATCH({cl}{r_g},{lib_name_rng},0)),0)"
             pn_e   = f"IFERROR(INDEX({lib_pn_rng},MATCH({cl}{r_g},{lib_name_rng},0)),0)"
             fx_e   = f"IFERROR(INDEX({lib_fix_rng},MATCH({cl}{r_g},{lib_name_rng},0)),0)"
             mod_e  = f"IFERROR(INDEX({lib_mod_rng},MATCH({cl}{r_g},{lib_name_rng},0)),\"quadratic\")"
-            is1p_e = f"ISNUMBER(SEARCH(\"1P\",IFERROR(INDEX({lib_sz_rng},MATCH({cl}{r_g},{lib_name_rng},0)),\"\")))"
-            ws_smp.cell(r_g, h_i_col, f"=IF(OR({cl}{r_g}=\"\",{role_e}<>\"Feeder\"),0,{in_e}*0.68*$B$16/IF({is1p_e},3,1))")
+            is1p_e = f"IF({cl}{r_ov_p}<>\"\",{cl}{r_ov_p}=\"1P\",ISNUMBER(SEARCH(\"1P\",IFERROR(INDEX({lib_sz_rng},MATCH({cl}{r_g},{lib_name_rng},0)),\"\"))))"
+            eff_i  = f"IF({cl}{r_ov_a}<>\"\",{cl}{r_ov_a},{in_e}*0.68*$B$16)"
+            ws_smp.cell(r_g, h_i_col, f"=IF(OR({cl}{r_g}=\"\",{role_e}<>\"Feeder\"),0,({eff_i})/IF({is1p_e},3,1))")
 
-            # Hidden helper columns P..U (16..21): Rule-of-Thumb Normal Device Loss (W) per cell
+            # Hidden helper columns P..U (16..21): Rule-of-Thumb or Per-Cell Override Device Loss (W)
             h_w_col = 16 + c_idx
             ws_smp.cell(r_g, h_w_col,
                 f"=IF(OR({cl}{r_g}=\"\",{role_e}=\"Incomer\",{role_e}=\"Interconnector\"),0,"
                 f"IF({role_e}=\"Spare / Placeholder\",{fx_e},"
-                f"{fx_e}+IF({mod_e}=\"vsd\",{pn_e}*(0.25+0.75*0.72*$B$16),{pn_e}*((0.68*$B$16)^2))))"
+                f"{fx_e}+IF({mod_e}=\"vsd\",{pn_e}*(0.25+0.75*(({eff_i})/MAX(1,{in_e}))),{pn_e}*((({eff_i})/MAX(1,{in_e}))^2))))"
             )
 
     # Row 55: Column Rule-of-Thumb Load (A) & Row 56: Column Rule-of-Thumb Device Heat (W)
@@ -583,6 +586,32 @@ def generate_workbook():
         c55.font = FONT_CALC_BOLD; c55.fill = FILL_WHITE; c55.alignment = ALIGN_R; c55.border = BORDER_CELL; c55.number_format = "#,##0.0\" A\""
         c56 = ws_smp.cell(56, cc, f"=SUM({hw_l}49:{hw_l}54)")
         c56.font = FONT_TOTAL; c56.fill = FILL_HERO; c56.alignment = ALIGN_R; c56.border = BORDER_TOTAL; c56.number_format = "#,##0.0\" W\""
+
+    # Section D2 (Rows 58..64): Optional Per-Cell Operating Current Override (A) — blank = Auto rule-of-thumb!
+    style_section_bar(ws_smp, 58, 1, 7, "D2. OPTIONAL PER-CELL OPERATING CURRENT OVERRIDE (A) — LEAVE BLANK FOR AUTO RULE-OF-THUMB")
+    for t_idx in range(6):
+        r_ov = 59 + t_idx
+        ws_smp.row_dimensions[r_ov].height = 19
+        cl_t = ws_smp.cell(r_ov, 1, f"Tier {t_idx + 1} Actual Load (A)")
+        cl_t.font = FONT_CALC_BOLD; cl_t.fill = FILL_ZEBRA; cl_t.alignment = ALIGN_C; cl_t.border = BORDER_CELL
+        for c_idx in range(6):
+            cc = 2 + c_idx
+            c_ov = ws_smp.cell(r_ov, cc, "")
+            c_ov.font = FONT_INPUT; c_ov.fill = FILL_INPUT; c_ov.alignment = ALIGN_R; c_ov.border = BORDER_CELL; c_ov.number_format = "#,##0.0"
+
+    # Section D3 (Rows 66..72): Optional Per-Cell Supply Phases Override (3P / 1P) — blank = Auto from Device!
+    style_section_bar(ws_smp, 66, 1, 7, "D3. OPTIONAL PER-CELL SUPPLY PHASES OVERRIDE (3P / 1P) — LEAVE BLANK FOR AUTO FROM DEVICE")
+    dv_sm_ph = DataValidation(type="list", formula1='"3P,1P"', allow_blank=True)
+    ws_smp.add_data_validation(dv_sm_ph); dv_sm_ph.add("B67:G72")
+    for t_idx in range(6):
+        r_ph = 67 + t_idx
+        ws_smp.row_dimensions[r_ph].height = 19
+        cl_p = ws_smp.cell(r_ph, 1, f"Tier {t_idx + 1} Phases (3P/1P)")
+        cl_p.font = FONT_CALC_BOLD; cl_p.fill = FILL_ZEBRA; cl_p.alignment = ALIGN_C; cl_p.border = BORDER_CELL
+        for c_idx in range(6):
+            cc = 2 + c_idx
+            c_ph = ws_smp.cell(r_ph, cc, "")
+            c_ph.font = FONT_INPUT; c_ph.fill = FILL_INPUT; c_ph.alignment = ALIGN_C; c_ph.border = BORDER_CELL
 
     for hc in range(9, 22):
         ws_smp.column_dimensions[get_column_letter(hc)].hidden = True
@@ -2009,13 +2038,106 @@ def generate_workbook():
     configure_print(ws_sum, landscape=True, fit_width=1, fit_height=1)
 
     # =========================================================================
-    # SHEET 08: 08_Calc_Help_&_Method (Comprehensive Engineering Guide & Formulas)
+    # SHEET 08: 08_Calc_Help_&_Method (LIVE STEP-BY-STEP BREAKDOWN + SOURCES + METHODOLOGY!)
     # =========================================================================
     style_title_banner(
         ws_help, 5,
-        "CALCULATION METHODOLOGY, WORKED EXAMPLES & ABBREVIATION GLOSSARY",
-        "Complete transparent documentation of how every calculation in this protected workbook is carried out (IEC 60439 / 61439, IEC TR 60890, Eaton DS 10164, CIBSE Guide A)."
+        "CALCULATION HELP, LIVE STEP-BY-STEP BREAKDOWN & DATA SOURCE REFERENCES",
+        "Live worked breakdown pulling directly from YOUR active board & scenario, showing how every figure is calculated and where every value originates (IEC 60439 / 61439, IEC TR 60890, Eaton DS 10164, CIBSE Guide A)."
     )
+
+    # SECTION 0: LIVE FORMULA-DRIVEN STEP-BY-STEP WORKED CALCULATION BREAKDOWN (Rows 4..15)
+    style_section_bar(ws_help, 4, 1, 5, "0. LIVE STEP-BY-STEP WORKED CALCULATION BREAKDOWN (AUTO-UPDATED FOR THIS EXPORT!)")
+    ws_help.row_dimensions[5].height = 24
+    for ci, h_txt in enumerate(["Calculation Step", "Governing Formula / Basis", "Live Substituted Worked Math (This Board)", "Live Result", "Source Sheet / Cell & Standard"], 1):
+        ch = ws_help.cell(5, ci, h_txt); ch.font = FONT_HEADER; ch.fill = FILL_HEADER; ch.alignment = ALIGN_C if ci in (1, 4) else ALIGN_L; ch.border = BORDER_CELL
+
+    live_steps = [
+        (
+            "Basis — Mode & Scenario",
+            "Active Mode & Operating Scenario",
+            "=\"Mode: \"&'01_Summary'!C8&\" | Scenario: \"&'01_Summary'!C9&\" | System: \"&'02_Board_&_Busbars'!B12&\"V \"&'02_Board_&_Busbars'!B13&\"Hz \"&'02_Board_&_Busbars'!B14&\" | RDF=\"&TEXT('02_Board_&_Busbars'!B16,\"0%\")",
+            "='01_Summary'!C9",
+            "01_Summary!C8:C9 · 02_Board_&_Busbars!B12:B16",
+            "@",
+        ),
+        (
+            "Step 1 — Busbar R_AC(T)",
+            "R_AC(T) = (ρ₂₀/A)·[1+α(T−20)]·k_AC",
+            "=\"A=\"&'02_Board_&_Busbars'!B40&\"×\"&'02_Board_&_Busbars'!B41&\"×\"&'02_Board_&_Busbars'!B42&\"=\"&'02_Board_&_Busbars'!B51&\" mm² | R_DC(20°)=\"&TEXT('02_Board_&_Busbars'!B52,\"0.00\")&\" → R_DC(\"&'02_Board_&_Busbars'!B46&\"°C)=\"&TEXT('02_Board_&_Busbars'!B54,\"0.00\")&\" × k_AC(\"&TEXT('02_Board_&_Busbars'!B59,\"0.000\")&\")\"",
+            "='02_Board_&_Busbars'!B60",
+            "02_Board_&_Busbars!B38:B60 · IEC 60439 / CDA Pub 22",
+            "0.00\" µΩ/m\"",
+        ),
+        (
+            "Step 2 — Main HBB & Joints",
+            "P_HBB = Σ(3·I²·R_AC·L) + Σ(3·I²·R_joint)",
+            "=\"Peak HBB: \"&TEXT('04_Busbar_Segments'!D13,\"#,##0\")&\" A (\"&TEXT('04_Busbar_Segments'!H13,\"0.0\")&\" W/m) across \"&TEXT('04_Busbar_Segments'!C13,\"0.00\")&\" m | Busbar \"&TEXT('04_Busbar_Segments'!I13,\"#,##0.0\")&\" W + Splice Joints \"&TEXT('04_Busbar_Segments'!J13,\"#,##0.0\")&\" W\"",
+            "='04_Busbar_Segments'!K13",
+            "04_Busbar_Segments!C6:K13 · Joule's Law I²R_AC",
+            "#,##0.0\" W\"",
+        ),
+        (
+            "Step 3 — Vertical Droppers (VBB)",
+            "P_VBB = Σ(3·I_taper²·R_VBB·Δy)",
+            "=\"Peak VBB: \"&TEXT('04_Busbar_Segments'!H53,\"#,##0\")&\" A (\"&TEXT('04_Busbar_Segments'!K53,\"0.0\")&\" W/m) across \"&TEXT('04_Busbar_Segments'!E53,\"0.00\")&\" m total tapered dropper spans\"",
+            "='04_Busbar_Segments'!L53",
+            "04_Busbar_Segments!E18:L53 · Tapering Multi-Tier VBB",
+            "#,##0.0\" W\"",
+        ),
+        (
+            "Step 4 — Devices, VSD & HRC Fuses",
+            "P_dev = P_fix + P_n·(I_op/I_n)² (VSD: 0.25+0.75·I/In)",
+            "=\"Fixed: \"&TEXT('03_Feeder_Schedule'!U52,\"#,##0.0\")&\" W + Variable: \"&TEXT('03_Feeder_Schedule'!V52,\"#,##0.0\")&\" W + Take-offs/Joints: \"&TEXT('03_Feeder_Schedule'!W52,\"#,##0.0\")&\" W + IC Cable: \"&TEXT('03_Feeder_Schedule'!X52,\"#,##0.0\")&\" W\"",
+            "='03_Feeder_Schedule'!Y52",
+            "03_Feeder_Schedule!U52:Y52 · 06_Device_&_Fuse_Library (IEC 60890 / Eaton DS 10164)",
+            "#,##0.0\" W\"",
+        ),
+        (
+            "Step 5 — Total Switchgear Heat",
+            "P_total = (P_Bus + P_Dev + P_Aux) / 1000",
+            "=\"Active Mode (\"&'01_Summary'!C8&\"): Busbars & Joints \"&TEXT('01_Summary'!C13*1000,\"#,##0\")&\" W + Devices \"&TEXT('01_Summary'!E13*1000,\"#,##0\")&\" W + Aux \"&TEXT('02_Board_&_Busbars'!B24,\"#,##0\")&\" W = \"&TEXT('01_Summary'!A13*3412.14,\"#,##0\")&\" BTU/hr\"",
+            "='01_Summary'!A13",
+            "01_Summary!A13 · IEC 61439 Thermal Balance",
+            "0.000\" kW\"",
+        ),
+        (
+            "Step 6 — HVAC Design Heat Load",
+            "Q_design = P_total·(1+Margin) + Q_other",
+            "=\"Q_design = \"&TEXT(IF('07_Room_Ventilation'!B15=\"Yes\",'07_Room_Ventilation'!B16,'01_Summary'!A13),\"0.000\")&\" kW × (1+\"&TEXT('02_Board_&_Busbars'!B26,\"0%\")&\") + \"&TEXT('07_Room_Ventilation'!B11,\"0.00\")&\" kW other | Room: \"&'07_Room_Ventilation'!B6&\"×\"&'07_Room_Ventilation'!B7&\"×\"&'07_Room_Ventilation'!B8&\"m (\"&TEXT('07_Room_Ventilation'!B18,\"#,##0\")&\" m³)\"",
+            "='07_Room_Ventilation'!B19",
+            "07_Room_Ventilation!B6:B19 · 02_Board_&_Busbars!B26",
+            "0.000\" kW\"",
+        ),
+        (
+            "Step 7 — Cooling Airflow & ACH",
+            "V̇ = Q / (ρ·c_p·ΔT) | ACH = V̇(m³/h) / V",
+            "=\"ΔT = \"&'07_Room_Ventilation'!B10&\" − \"&'07_Room_Ventilation'!B9&\" = \"&TEXT('07_Room_Ventilation'!B20,\"0.0\")&\" K → Required: \"&TEXT('07_Room_Ventilation'!B21,\"#,##0\")&\" L/s (\"&TEXT('07_Room_Ventilation'!B22,\"#,##0\")&\" m³/h | \"&TEXT('07_Room_Ventilation'!B23,\"#,##0\")&\" CFM) → \"&TEXT('07_Room_Ventilation'!B24,\"0.00\")&\" ACH\"",
+            "='07_Room_Ventilation'!B21",
+            "07_Room_Ventilation!B20:B24 · CIBSE Guide A",
+            "#,##0\" L/s\"",
+        ),
+        (
+            "Step 8 — Natural Stack & Verdict",
+            "V̇_nat = Cd·(A/√2)·√(2gHΔT/T_amb)",
+            "=\"Natural Louver Capacity: \"&TEXT('07_Room_Ventilation'!B26,\"0.00\")&\" kW (\"&TEXT('07_Room_Ventilation'!B25,\"#,##0\")&\" m³/h, est. room temp \"&TEXT('07_Room_Ventilation'!B27,\"0.0\")&\"°C) → \"&'07_Room_Ventilation'!B28",
+            "='07_Room_Ventilation'!B26",
+            "07_Room_Ventilation!B25:B28 · CIBSE AM10",
+            "0.00\" kW cap\"",
+        ),
+    ]
+
+    r_h = 6
+    for idx_s, (st_lbl, st_eq, st_math, st_res, st_src, st_nf) in enumerate(live_steps):
+        ws_help.row_dimensions[r_h].height = 30
+        bg = FILL_HERO if idx_s in (5, 8) else (FILL_ZEBRA if idx_s % 2 else FILL_WHITE)
+        c1 = ws_help.cell(r_h, 1, st_lbl); c1.font = FONT_CALC_BOLD; c1.fill = bg; c1.alignment = ALIGN_L; c1.border = BORDER_CELL
+        c2 = ws_help.cell(r_h, 2, st_eq); c2.font = Font(name="Consolas", size=9, color=NAVY_DARK); c2.fill = bg; c2.alignment = ALIGN_L; c2.border = BORDER_CELL
+        c3 = ws_help.cell(r_h, 3, st_math); c3.font = FONT_CALC; c3.fill = bg; c3.alignment = ALIGN_L; c3.border = BORDER_CELL
+        c4 = ws_help.cell(r_h, 4, st_res); c4.font = FONT_TOTAL if idx_s in (5, 8) else FONT_CALC_BOLD; c4.fill = bg; c4.alignment = ALIGN_R; c4.border = BORDER_CELL; c4.number_format = st_nf
+        c5 = ws_help.cell(r_h, 5, st_src); c5.font = FONT_HINT; c5.fill = bg; c5.alignment = ALIGN_L; c5.border = BORDER_CELL
+        r_h += 1
+    r_h += 1
 
     help_sections = [
         ("1. QUICK-START GUIDE, WORKBOOK PROTECTION & DUTY/STANDBY PUMPS", [
@@ -2059,7 +2181,6 @@ def generate_workbook():
         ]),
     ]
 
-    r_h = 4
     for sec_title, rows_list in help_sections:
         style_section_bar(ws_help, r_h, 1, 5, sec_title)
         r_h += 1
@@ -2072,7 +2193,7 @@ def generate_workbook():
             r_h += 1
         r_h += 1
 
-    for i, w in enumerate([34, 28, 28, 28, 28], 1):
+    for i, w in enumerate([28, 30, 56, 16, 30], 1):
         ws_help.column_dimensions[get_column_letter(i)].width = w
     configure_print(ws_help, landscape=True, fit_width=1)
 
@@ -2091,7 +2212,7 @@ def generate_workbook():
     try:
         wb.save(final_path)
     except PermissionError:
-        final_path = OUTPUT_PATH.replace(".xlsx", "_v3.2.xlsx")
+        final_path = OUTPUT_PATH.replace(".xlsx", "_v3.4.xlsx")
         wb.save(final_path)
         print(f"NOTE: Original file is open in Excel; saved updated workbook to: {final_path}")
 

@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '3.2.0';
+  const APP_VERSION = '3.4.0';
 
   function loadInitialProject() {
     try {
@@ -2742,6 +2742,8 @@
             <h3>
               ⚡ Simple Mode — Rules-of-Thumb Assessment
               <div class="action-row">
+                <button id="sm-sync-from-det" class="btn btn-sm btn-secondary" title="Mirror your current Detailed Mode switchboard into this Simple Mode view">← Pull from Detailed</button>
+                <button id="sm-open-help" class="btn btn-sm btn-secondary" title="Open live step-by-step worked calculation breakdown & data source references">📖 Calc Help &amp; Steps</button>
                 <button class="btn btn-sm ${isTierGrid ? 'btn-primary' : 'btn-secondary'}" data-sm-style="tier_grid">Tier-by-Tier Grid</button>
                 <button class="btn btn-sm ${!isTierGrid ? 'btn-primary' : 'btn-secondary'}" data-sm-style="counts">Quick Counts</button>
               </div>
@@ -2827,10 +2829,25 @@
                              <td style="text-align:center;font-weight:700;color:var(--text-2);background:var(--bg-2);">T${tIdx + 1}</td>
                              ${sm.tierGrid.map((gCol, cIdx) => {
                                const val = (gCol.tiers && gCol.tiers[tIdx]) || '';
+                               const tplObj = val ? (project.deviceLibrary || []).find((x) => x.id === val) : null;
+                               const isFeederCell = tplObj && (tplObj.role === 'feeder' || !tplObj.role);
+                               const ovAmps = gCol.loads && gCol.loads[tIdx] !== '' && gCol.loads[tIdx] != null ? gCol.loads[tIdx] : '';
+                               const ovPhase = (gCol.phases && gCol.phases[tIdx]) || (tplObj && tplObj.phases) || '3P';
                                const cellInfo = sim.cellMap && sim.cellMap[`${cIdx}:${tIdx}`];
                                return `<td class="sm-tier-cell">
                                  <select data-sm-cell="${cIdx}:${tIdx}">${renderSimpleTierOptions(val)}</select>
-                                 ${cellInfo ? `<div class="sm-tier-badge"><span>${cellInfo.iOp.toFixed(0)} A</span><span class="w">${cellInfo.totalW.toFixed(0)} W</span></div>` : ''}
+                                 ${
+                                   isFeederCell
+                                     ? `<div class="sm-cell-override" title="Optional actual operating current (A) — leave blank for automatic ${sm.avgLoadPct}% rule-of-thumb">
+                                         <input type="number" data-sm-cell-amps="${cIdx}:${tIdx}" value="${ovAmps}" min="0" step="1" placeholder="Auto A" />
+                                         <select data-sm-cell-phase="${cIdx}:${tIdx}" title="Supply phases (3P 400V or 1P 230V)">
+                                           <option value="3P" ${ovPhase !== '1P' ? 'selected' : ''}>3P</option>
+                                           <option value="1P" ${ovPhase === '1P' ? 'selected' : ''}>1P</option>
+                                         </select>
+                                       </div>`
+                                     : ''
+                                 }
+                                 ${cellInfo ? `<div class="sm-tier-badge"><span>${cellInfo.iOp.toFixed(0)} A${ovPhase === '1P' && isFeederCell ? ' 1P' : ''}</span><span class="w">${cellInfo.totalW.toFixed(0)} W</span></div>` : ''}
                                </td>`;
                              }).join('')}
                            </tr>
@@ -2908,17 +2925,20 @@
               </div>
             </h3>
             <div class="room-metrics-grid">
-              <div class="kpi-card hero">
+              <div class="kpi-card hero explainable" data-sm-help="1" title="Click for live step-by-step calculation breakdown & source references">
+                <span class="kpi-explain-cue">Steps ↗</span>
                 <span class="kpi-label">Active Simple Estimate</span>
                 <span class="kpi-value">${act.totalKW.toFixed(2)} kW</span>
                 <span class="kpi-sub">${act.totalW.toFixed(0)} W · ${Math.round(act.totalW * 3.41214).toLocaleString()} BTU/hr</span>
               </div>
-              <div class="kpi-card">
+              <div class="kpi-card explainable" data-sm-help="1" title="Click for busbar Joule I²R calculation steps & sources">
+                <span class="kpi-explain-cue">Steps ↗</span>
                 <span class="kpi-label">Busbars &amp; Joints</span>
                 <span class="kpi-value">${(act.busbarW / 1000).toFixed(2)} kW</span>
                 <span class="kpi-sub">${act.busbarW.toFixed(0)} W · Peak ${act.hbbPeakWPerM.toFixed(0)} W/m</span>
               </div>
-              <div class="kpi-card">
+              <div class="kpi-card explainable" data-sm-help="1" title="Click for IEC TR 60890 device & VSD loss steps & sources">
+                <span class="kpi-explain-cue">Steps ↗</span>
                 <span class="kpi-label">Devices &amp; Drives</span>
                 <span class="kpi-value">${(act.devicesW / 1000).toFixed(2)} kW</span>
                 <span class="kpi-sub">VSD ${act.vsdLoss.toFixed(0)}W · DOL ${act.dolLoss.toFixed(0)}W · Fdr ${act.fdrLoss.toFixed(0)}W</span>
@@ -3047,6 +3067,34 @@
           pushUndo();
           if (!Array.isArray(sm.tierGrid[cIdx].tiers)) sm.tierGrid[cIdx].tiers = ['', '', '', '', '', ''];
           sm.tierGrid[cIdx].tiers[tIdx] = sel.value;
+          // Reset per-cell phase override to match newly selected template (preserve manual amps if user typed one)
+          if (Array.isArray(sm.tierGrid[cIdx].phases)) sm.tierGrid[cIdx].phases[tIdx] = '';
+          if (!sel.value && Array.isArray(sm.tierGrid[cIdx].loads)) sm.tierGrid[cIdx].loads[tIdx] = '';
+          renderAll();
+        }
+      });
+    });
+
+    ws.querySelectorAll('[data-sm-cell-amps]').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        const [cIdx, tIdx] = inp.dataset.smCellAmps.split(':').map(Number);
+        if (sm.tierGrid[cIdx]) {
+          pushUndo();
+          if (!Array.isArray(sm.tierGrid[cIdx].loads)) sm.tierGrid[cIdx].loads = ['', '', '', '', '', ''];
+          const raw = inp.value.trim();
+          sm.tierGrid[cIdx].loads[tIdx] = raw === '' ? '' : Math.max(0, Number(raw) || 0);
+          renderAll();
+        }
+      });
+    });
+
+    ws.querySelectorAll('[data-sm-cell-phase]').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const [cIdx, tIdx] = sel.dataset.smCellPhase.split(':').map(Number);
+        if (sm.tierGrid[cIdx]) {
+          pushUndo();
+          if (!Array.isArray(sm.tierGrid[cIdx].phases)) sm.tierGrid[cIdx].phases = ['', '', '', '', '', ''];
+          sm.tierGrid[cIdx].phases[tIdx] = sel.value;
           renderAll();
         }
       });
@@ -3058,6 +3106,18 @@
         renderAll();
       });
     });
+
+    const syncDetBtn = document.getElementById('sm-sync-from-det');
+    if (syncDetBtn) {
+      syncDetBtn.addEventListener('click', () => {
+        pushUndo();
+        window.SGState.syncDetailedToSimple(project);
+        renderAll();
+      });
+    }
+    const smHelpBtn = document.getElementById('sm-open-help');
+    if (smHelpBtn) smHelpBtn.addEventListener('click', openCalcHelpModal);
+    ws.querySelectorAll('[data-sm-help]').forEach((el) => el.addEventListener('click', openCalcHelpModal));
 
     document.getElementById('sm-expand-btn').addEventListener('click', () => {
       pushUndo();
@@ -3161,6 +3221,14 @@
       selection = { type: 'mainBusbar' };
       renderAll();
     });
+    const sldSimpBtn = document.getElementById('sld-simplify-btn');
+    if (sldSimpBtn) {
+      sldSimpBtn.addEventListener('click', () => {
+        pushUndo();
+        window.SGState.syncDetailedToSimple(project);
+        renderAll();
+      });
+    }
     document.getElementById('sld-export-svg').addEventListener('click', () => {
       window.SGReport.exportSVG('sld-svg', `${project.meta.projectNumber || 'switchgear'}_SLD.svg`);
     });
@@ -3273,12 +3341,158 @@
       triggerConfiguredPrint(activeSc.result, allScenarios);
     });
 
-    // Privacy & Data Storage Modal
+    // Calculation Help & Step-by-Step Breakdown Modal + Privacy Modal
+    const btnCalcHelp = document.getElementById('btn-calc-help');
+    if (btnCalcHelp) btnCalcHelp.addEventListener('click', openCalcHelpModal);
     document.getElementById('btn-privacy').addEventListener('click', openPrivacyModal);
     document.getElementById('btn-privacy-footer').addEventListener('click', openPrivacyModal);
 
     // Background Version Check (detects fresh GitHub/Cloudflare deployments automatically)
     checkForAppUpdate();
+  }
+
+  function openCalcHelpModal() {
+    let overlay = document.getElementById('calc-help-modal-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'calc-help-modal-overlay';
+      overlay.className = 'modal-overlay';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.classList.remove('open');
+      });
+    }
+
+    const isSimple = project.uiMode === 'simple';
+    const cfg = project.config || {};
+    const rm = project.room || {};
+    const sim = isSimple ? window.SGPhysics.evaluateSimpleMode(project) : null;
+    const evalRes = isSimple
+      ? (sim.activeEvalRes || window.SGPhysics.evaluateSwitchgear(project, project.activeScenario))
+      : window.SGPhysics.evaluateSwitchgear(project, project.activeScenario);
+
+    const hbbRes = isSimple ? sim.hbbRes : evalRes.hbbRes;
+    const bbSpec = isSimple ? (sim.tempProject ? sim.tempProject.mainBusbar : project.mainBusbar) : project.mainBusbar;
+    const totalKW = Number(isSimple ? sim.active.totalKW : evalRes.totals.grandTotalKW) || 0;
+    const totalW = Number(isSimple ? sim.active.totalW : evalRes.totals.grandTotalW) || 0;
+    const busbarW = Number(isSimple ? sim.active.busbarW : evalRes.totals.totalBusbarW) || 0;
+    const hbbW = Number(isSimple ? sim.active.hbbLossW : evalRes.totals.totalHbbLossW) || 0;
+    const vbbW = Number(isSimple ? sim.active.vbbLossW : evalRes.totals.totalVbbLossW) || 0;
+    const jointsW = Number(isSimple ? sim.active.jointsW : evalRes.totals.totalTakeoffAndJointW) || 0;
+    const devicesW = Number(isSimple ? sim.active.devicesW : evalRes.totals.totalDevicesW) || 0;
+    const auxW = Number(isSimple ? sim.active.auxW : evalRes.totals.totalAuxW) || 0;
+    const incA = Number(isSimple ? sim.active.totalBoardA : evalRes.totals.totalIncomerCurrentA) || 0;
+    const peakWm = Number(isSimple ? sim.active.hbbPeakWPerM : evalRes.totals.maxHbbWPerM) || 0;
+    const rv = window.SGPhysics.calcRoomVentilation(rm, totalKW, cfg.hvacSafetyMarginPct);
+
+    // Collect unique source references from active board devices (respecting Simple Mode vs Detailed Mode)
+    const srcMap = new Map();
+    const srcCols = isSimple && sim && sim.tempProject ? sim.tempProject.columns : (project.columns || []);
+    srcCols.forEach((c) => {
+      (c.tiers || []).forEach((t) => {
+        if (t.role === 'spacer') return;
+        const tpl = (project.deviceLibrary || []).find((x) => x.id === t.templateId);
+        const key = t.templateId || t.description;
+        if (!srcMap.has(key)) {
+          srcMap.set(key, {
+            name: t.description || t.category,
+            inA: t.ratedCurrentA,
+            pnW: t.ratedLossW,
+            fixW: t.fixedLossW || 0,
+            ref: t.sourceRef || (tpl && tpl.sourceRef) || 'IEC 60947 / IEC TR 60890 Representative Data',
+            url: t.sourceUrl || (tpl && tpl.sourceUrl) || '',
+          });
+        }
+      });
+    });
+
+    overlay.innerHTML = `
+      <div class="modal-card" style="max-width:860px;max-height:88vh;overflow-y:auto;">
+        <div class="modal-header">
+          <div>
+            <h3>📖 Calculation Help, Step-by-Step Worked Breakdown &amp; Sources</h3>
+            <div class="modal-sub">Live worked audit for <strong>${esc(project.meta.projectName)}</strong> · Mode: <strong>${isSimple ? 'Simple Mode' : 'Detailed Mode'}</strong> · Scenario: <strong>${esc(project.activeScenario)}</strong></div>
+          </div>
+          <button class="modal-close" id="calc-help-close" title="Close">×</button>
+        </div>
+        <div class="modal-body" style="gap:14px;">
+          <div class="insp-section-title">1. Live Step-by-Step Calculation Breakdown (Using Your Actual Inputs)</div>
+          <table class="data-table" style="font-size:11.5px;">
+            <thead>
+              <tr><th style="width:155px;">Step</th><th>Governing Equation &amp; Live Substituted Math</th><th class="num" style="width:115px;">Live Result</th><th style="width:150px;">Source / Standard</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Step 1: Busbar R_AC(T)</strong></td>
+                <td><code>A = ${bbSpec.barsPerPhase}×${bbSpec.widthMm}×${bbSpec.thicknessMm} = ${hbbRes.areaMm2} mm²</code> · <code>R_DC(20°) = ${hbbRes.rDc20_uOhmPerM.toFixed(2)} µΩ/m</code> → <code>R_DC(${bbSpec.operatingTempC}°C) = ${hbbRes.rDcT_uOhmPerM.toFixed(2)} µΩ/m</code> × <code>k_AC(${(hbbRes.kAcUsed || 1.2).toFixed(3)})</code></td>
+                <td class="num"><strong>${hbbRes.rAcT_uOhmPerM.toFixed(2)} µΩ/m</strong></td>
+                <td>IEC 60439 / CDA Pub 22 (${esc(bbSpec.material)})</td>
+              </tr>
+              <tr>
+                <td><strong>Step 2: Busbars &amp; Joints</strong></td>
+                <td><code>P = Σ(3·I²·R_AC·L) + Σ(3·I²·R_joint)</code> → HBB <strong>${hbbW.toFixed(1)} W</strong> (Peak ${peakWm.toFixed(1)} W/m @ ${Math.round(incA)} A) + VBB <strong>${vbbW.toFixed(1)} W</strong> + Joints/Take-offs <strong>${jointsW.toFixed(1)} W</strong></td>
+                <td class="num"><strong>${busbarW.toFixed(1)} W</strong></td>
+                <td>Joule's Law · Tab 3 / Sheet 04</td>
+              </tr>
+              <tr>
+                <td><strong>Step 3: Devices &amp; Drives</strong></td>
+                <td><code>P_op = P_fix + P_n·(I_op/I_n)²</code> (VSD/IGBT: <code>0.25 + 0.75·(I_op/I_n)</code>; 1P circuits use <code>V_ph = ${Math.round((cfg.voltageV || 400) / Math.sqrt(3))}V</code> &amp; <code>I_1P/3</code> on 3P bus)</td>
+                <td class="num"><strong>${devicesW.toFixed(1)} W</strong></td>
+                <td>IEC TR 60890 · IEC 61800-9-2 · Eaton DS 10164</td>
+              </tr>
+              <tr>
+                <td><strong>Step 4: Total Heat Output</strong></td>
+                <td><code>P_total = ${busbarW.toFixed(1)} W (Busbars) + ${devicesW.toFixed(1)} W (Devices) + ${auxW.toFixed(1)} W (Panel Aux)</code> = <strong>${totalW.toFixed(0)} W</strong> (${Math.round(totalW * 3.41214).toLocaleString()} BTU/hr)</td>
+                <td class="num"><strong>${totalKW.toFixed(3)} kW</strong></td>
+                <td>IEC 61439-1 Thermal Balance</td>
+              </tr>
+              <tr>
+                <td><strong>Step 5: HVAC &amp; Airflow</strong></td>
+                <td><code>Q_design = ${totalKW.toFixed(2)} × (1 + ${cfg.hvacSafetyMarginPct}%) + ${rm.otherRoomHeatKW} kW = ${rv.designHeatKW.toFixed(2)} kW</code> · Room <code>${rm.lengthM}×${rm.widthM}×${rm.heightM}m = ${rv.volumeM3.toFixed(0)} m³</code> · <code>ΔT = ${rm.maxRoomTempC} − ${rm.ambientTempC} = ${rv.deltaT.toFixed(1)} K</code> → <code>V̇ = Q / (ρ·c_p·ΔT)</code></td>
+                <td class="num"><strong>${rv.reqFlowLs.toFixed(0)} L/s<br>${rv.ach.toFixed(2)} ACH</strong></td>
+                <td>CIBSE Guide A Sensible Heat Balance</td>
+              </tr>
+              <tr>
+                <td><strong>Step 6: Ventilation Verdict</strong></td>
+                <td>Natural stack capacity through <code>${rm.louverFreeAreaM2} m²</code> louvers (<code>H_stack = ${rm.stackHeightM} m</code>): <strong>${rv.natCapacityKW.toFixed(2)} kW</strong> (${rv.natFlowM3h.toFixed(0)} m³/h, est. room temp <strong>${rv.estNatRoomTempC.toFixed(1)}°C</strong>) → <strong>${esc(rv.verdictTitle)}</strong></td>
+                <td class="num" style="color:${rv.verdictColor};"><strong>${String(rv.verdictCode || 'OK').replace('_', ' ').toUpperCase()}</strong></td>
+                <td>CIBSE AM10 Natural Buoyancy</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="insp-section-title">2. Where Device &amp; Datasheet Values Come From (Audit References)</div>
+          <table class="data-table" style="font-size:11px;">
+            <thead>
+              <tr><th>Device / Starter Model</th><th class="num">In (A)</th><th class="num">Pn (W)</th><th class="num">Fix (W)</th><th>Data Source / Evidence Link</th></tr>
+            </thead>
+            <tbody>
+              ${Array.from(srcMap.values())
+                .map(
+                  (s) => `<tr>
+                    <td>${esc(s.name)}</td>
+                    <td class="num">${s.inA}</td>
+                    <td class="num">${s.pnW}</td>
+                    <td class="num">${s.fixW}</td>
+                    <td>${esc(s.ref)}${s.url ? ` <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-weight:600;">[Datasheet ↗]</a>` : ''}</td>
+                  </tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+          <div class="notice-box" style="font-size:11.5px;">
+            <strong>Tip for Excel Export:</strong> Clicking <strong>📊 Export Excel (.xlsx)</strong> automatically embeds this exact live Step-by-Step Worked Calculation Breakdown and all cell/standard source references on Tab <strong><code>08_Calc_Help_&amp;_Method</code></strong>!
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn btn-primary" id="calc-help-ok">Close Help</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    overlay.classList.add('open');
+    document.getElementById('calc-help-close').addEventListener('click', () => overlay.classList.remove('open'));
+    document.getElementById('calc-help-ok').addEventListener('click', () => overlay.classList.remove('open'));
   }
 
   function openPrivacyModal() {

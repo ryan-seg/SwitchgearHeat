@@ -448,6 +448,25 @@ input:focus, select:focus, textarea:focus {
   font-size: 10.5px;
   padding: 3px 4px;
 }
+.sm-cell-override {
+  display: flex;
+  gap: 3px;
+  margin-top: 3px;
+  align-items: center;
+}
+.sm-cell-override input[type="number"] {
+  flex: 1;
+  min-width: 58px;
+  font-size: 10.5px;
+  padding: 2px 3px 2px 5px;
+}
+.sm-cell-override select {
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  font-size: 10px;
+  padding: 2px 2px;
+}
 .sm-tier-badge {
   margin-top: 3px;
   font-size: 10px;
