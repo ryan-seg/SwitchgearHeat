@@ -150,38 +150,59 @@ def apply_sheet_protection(ws, strict_calc_sheet=False):
 
 
 def build_library_data():
-    """Returns full Device, Starter, and Eaton Bussmann NH gG HRC Fuse (2A-1250A) catalog (no ~ wildcards)."""
-    items = [
-        ("ACB 800A Drawout (3P/4P)", "ACB", "Incomer", 800, 110.0, 12.0, "quadratic", 700, "Generic IEC 60947-2 Air Circuit Breaker + electronic trip unit"),
-        ("ACB 1600A Drawout (3P/4P)", "ACB", "Incomer", 1600, 260.0, 15.0, "quadratic", 750, "Generic 1600A Drawout Air Circuit Breaker"),
-        ("ACB 2500A Drawout (3P/4P)", "ACB", "Incomer", 2500, 480.0, 18.0, "quadratic", 850, "Generic 2500A Drawout Air Circuit Breaker"),
-        ("ACB 3200A Drawout (3P/4P)", "ACB", "Incomer", 3200, 680.0, 20.0, "quadratic", 900, "Generic 3200A Drawout Air Circuit Breaker"),
-        ("Bus-Section Coupler ACB 2500A", "ACB", "Bus Coupler", 2500, 440.0, 15.0, "quadratic", 850, "Bus-section coupler ACB between Section A and Section B"),
-        ("Interconnector ACB 1600A (Firm Supply)", "ACB", "Interconnector", 1600, 260.0, 15.0, "quadratic", 850, "Outgoing Interconnector ACB supplying partner B-Side switchboard"),
+    """
+    Returns complete, strictly sorted Device, Starter & Eaton Bussmann NH gG HRC Fuse catalog
+    (no ~ wildcards so Excel MATCH() never breaks).
+    Sorted by: Type (Category) -> Manufacturer -> Model / Series -> Size (numeric ascending).
+    Tuple columns (13):
+      (Name, Type, Manufacturer, ModelSeries, SizeLabel, DefaultRole, In_A, Pn_W, Fix_W, Model, Height_mm, SourceRef, SourceUrl)
+    """
+    URL_EATON = "https://www.eaton.com/content/dam/eaton/products/electrical-circuit-protection/fuses/data-sheets/bus-ele-ds-10164-nh-fuse-links-500vac.pdf"
+    URL_60947_2 = "https://webstore.iec.ch/en/publication/59761"
+    URL_60898_1 = "https://webstore.iec.ch/en/publication/59854"
+    URL_60947_4 = "https://webstore.iec.ch/en/publication/60559"
+    URL_61800_9 = "https://webstore.iec.ch/en/publication/29909"
+    URL_61439_1 = "https://webstore.iec.ch/en/publication/62019"
 
-        ("MCCB 100A (3P Thermal-Mag)", "MCCB", "Feeder", 100, 24.0, 0.0, "quadratic", 200, "Generic 100A Moulded Case Circuit Breaker (~8W/pole)"),
-        ("MCCB 160A (3P Electronic)", "MCCB", "Feeder", 160, 30.0, 2.0, "quadratic", 220, "Generic 160A Moulded Case Circuit Breaker (~10W/pole)"),
-        ("MCCB 250A (3P Electronic)", "MCCB", "Feeder", 250, 42.0, 2.0, "quadratic", 260, "Generic 250A Moulded Case Circuit Breaker (~14W/pole)"),
-        ("MCCB 400A (3P Electronic)", "MCCB", "Feeder", 400, 66.0, 3.0, "quadratic", 320, "Generic 400A Moulded Case Circuit Breaker (~22W/pole)"),
-        ("MCCB 630A (3P Electronic)", "MCCB", "Feeder", 630, 114.0, 4.0, "quadratic", 400, "Generic 630A Moulded Case Circuit Breaker (~38W/pole)"),
-        ("MCCB 800A (3P Electronic)", "MCCB", "Feeder", 800, 165.0, 5.0, "quadratic", 450, "Generic 800A Moulded Case Circuit Breaker (~55W/pole)"),
-        ("MCB 63A (3P Miniature Breaker)", "MCB", "Feeder", 63, 16.0, 0.0, "quadratic", 160, "Generic 63A 3-Pole Miniature Circuit Breaker (~5.3W/pole)"),
+    raw = []  # (sort_key, row_tuple)
 
-        ("DOL Starter 7.5 kW (25A frame)", "DOL Starter", "Feeder", 25, 18.0, 9.0, "quadratic", 200, "Direct-On-Line: MPCB + Contactor poles/coil + Overload + Aux"),
-        ("DOL Starter 15 kW (40A frame)", "DOL Starter", "Feeder", 40, 27.0, 12.0, "quadratic", 220, "Direct-On-Line: MCCB + 40A Contactor + Overload + Control"),
-        ("DOL Starter 22 kW (63A frame)", "DOL Starter", "Feeder", 63, 36.0, 15.0, "quadratic", 260, "Direct-On-Line: MCCB + 65A Contactor + Overload + Control"),
-        ("DOL Starter 37 kW (100A frame)", "DOL Starter", "Feeder", 100, 55.0, 18.0, "quadratic", 300, "Direct-On-Line: MCCB 100A + 95A Contactor + Electronic O/L + Aux"),
-        ("DOL Starter 55 kW (160A frame)", "DOL Starter", "Feeder", 160, 78.0, 22.0, "quadratic", 350, "Direct-On-Line: MCCB 160A + 150A Contactor + O/L + Aux"),
-        ("Star-Delta Starter 75 kW (200A frame)", "Star-Delta Starter", "Feeder", 200, 108.0, 34.0, "quadratic", 450, "MCCB + Main & Delta Contactors (Run mode) + O/L + Timer"),
-        ("Soft Starter 30 kW (Bypassed, 80A)", "Soft Starter", "Feeder", 80, 36.0, 25.0, "quadratic", 350, "MCCB + Internal bypass contactor poles + electronics/fan"),
-        ("VSD / Inverter Drive 15 kW (3% loss)", "VSD / Inverter", "Feeder", 32, 450.0, 35.0, "vsd", 400, "Variable Speed Drive: Input MCCB + IGBT power stage + fan"),
-        ("VSD / Inverter Drive 45 kW (2.8% loss)", "VSD / Inverter", "Feeder", 90, 1260.0, 65.0, "vsd", 600, "Variable Speed Drive: Input MCCB + IGBT power stage + fan"),
+    def add(cat, mfg, series, size_num, size_lbl, name, role, in_a, pn_w, fix_w, lmod, h_mm, ref, url):
+        import re as _re
+        nat_series = [int(p) if p.isdigit() else p.lower() for p in _re.split(r"(\d+)", series)]
+        skey = (cat.lower(), mfg.lower(), nat_series, float(size_num), float(in_a))
+        raw.append((skey, (name, cat, mfg, series, size_lbl, role, in_a, round(pn_w, 1), round(fix_w, 1), lmod, h_mm, ref, url)))
 
-        ("Spare Space / Blank Reserve Bay (0W)", "Spare Space", "Spare / Placeholder", 1, 0.0, 0.0, "quadratic", 250, "Physical reserve space occupying GA height (0 A, 0 W)"),
-        ("Placeholder Bay (0W)", "Placeholder", "Spare / Placeholder", 1, 0.0, 0.0, "quadratic", 300, "Undefined future equipment placeholder (0 A, 0 W)"),
-        ("Metering / Marshalling Chamber (15W)", "Chamber / Aux", "Spare / Placeholder", 1, 0.0, 15.0, "quadratic", 300, "Control/metering compartment with 15 W fixed auxiliary heat"),
+    # 1. ACBs — Incomers, Interconnectors (incl. 1250A!) & Bus-Section Couplers (800A–4000A)
+    for amps, pn, pfix, h in [(800, 110, 12, 700), (1000, 145, 13, 720), (1250, 195, 14, 740), (1600, 260, 15, 750), (2000, 360, 16, 780), (2500, 480, 18, 800), (3200, 680, 20, 900), (4000, 880, 22, 950)]:
+        add("ACB", "Generic IEC", "IEC 60947-2 Incomer ACB", amps, f"{amps} A",
+            f"ACB Incomer {amps}A Drawout (3P/4P)", "Incomer", amps, pn, pfix, "quadratic", h,
+            "IEC 60947-2 / Representative Drawout ACB Catalogues (Emax / MasterPact / 3WA / IZMX)", URL_60947_2)
+
+    for amps, pn, pfix, h in [(800, 110, 12, 700), (1000, 145, 13, 720), (1250, 195, 14, 740), (1600, 260, 15, 750), (2000, 360, 16, 780), (2500, 480, 18, 800), (3200, 680, 20, 900)]:
+        add("ACB", "Generic IEC", "IEC 60947-2 Interconnector ACB", amps, f"{amps} A",
+            f"Interconnector ACB {amps}A Drawout (3P/4P)", "Interconnector", amps, pn, pfix, "quadratic", h,
+            "IEC 60947-2 Outgoing Firm-Supply Interconnector ACB", URL_60947_2)
+
+    for amps, pn, pfix, h in [(800, 100, 12, 700), (1250, 180, 14, 740), (1600, 240, 15, 750), (2000, 330, 15, 780), (2500, 440, 15, 800), (3200, 630, 18, 900)]:
+        add("ACB", "Generic IEC", "IEC 60947-2 Bus-Section Coupler ACB", amps, f"{amps} A",
+            f"Bus-Section Coupler ACB {amps}A Drawout", "Bus Coupler", amps, pn, pfix, "quadratic", h,
+            "IEC 60947-2 Bus-Section Coupler ACB", URL_60947_2)
+
+    # 2. DOL Starters — Complete IEC 400V Series (0.75 kW – 55 kW)
+    dol_list = [
+        (0.75, 4, 7.7, 5.5, 180), (1.5, 6, 9.0, 5.5, 180), (2.2, 9, 10.5, 6.0, 180),
+        (4, 12, 13.0, 7.0, 190), (5.5, 16, 15.4, 7.5, 190), (7.5, 25, 18.0, 9.0, 200),
+        (11, 32, 22.5, 10.5, 210), (15, 40, 27.0, 12.0, 220), (18.5, 50, 31.5, 13.5, 240),
+        (22, 63, 36.0, 15.0, 250), (30, 80, 45.0, 16.0, 280), (37, 100, 55.0, 18.0, 300),
+        (45, 125, 66.0, 20.0, 320), (55, 160, 78.0, 22.0, 350),
     ]
+    for kw, frame_a, pn, pfix, h in dol_list:
+        kw_str = f"{kw:g}"
+        add("DOL Starter", "Generic IEC", "IEC 60947-4-1 AC-3 DOL", kw, f"{kw_str} kW ({frame_a}A)",
+            f"DOL Starter {kw_str} kW ({frame_a}A frame)", "Feeder", frame_a, pn, pfix, "quadratic", h,
+            "IEC 60947-4-1 / IEC TR 60890 DOL Starter (MPCB/MCCB + Contactor + O/L + Coil)", URL_60947_4)
 
+    # 3. Eaton Bussmann NH gG HRC Fuses (All 31 ratings 2A – 1250A, DS 10164)
     eaton_fuses = [
         ("2NHG000B",   "NH000", 2,    3.9,   0.6,  160),
         ("4NHG000B",   "NH000", 4,    1.8,   0.6,  160),
@@ -218,11 +239,91 @@ def build_library_data():
     for part, size, amps, w_link, w_base, h_mm in eaton_fuses:
         links_3p = round(w_link * 3, 1)
         total_pn = round(links_3p + w_base, 1)
-        name = f"Eaton {part} — {amps}A {size} gG HRC ({w_link}W/link)"
-        note = f"Eaton Bussmann DS 10164 (500V AC gG): 3x{w_link}W links ({links_3p}W) + {size} fuse-switch base ({w_base}W)"
-        items.append((name, "HRC Fuse-Switch", "Feeder", amps, total_pn, 0.0, "quadratic", h_mm, note))
+        add("HRC Fuse-Switch", "Eaton Bussmann", f"{size} gG HRC", amps, f"{amps} A",
+            f"Eaton {part} — {amps}A {size} gG HRC ({w_link}W/link)", "Feeder", amps, total_pn, 0.0, "quadratic", h_mm,
+            f"Eaton Bussmann Data Sheet 10164 — {part} (3x{w_link}W + {w_base}W base)", URL_EATON)
 
-    return items
+    # 4. MCBs (6A – 125A)
+    for amps, pn, h in [(6, 4.5, 150), (10, 5.4, 150), (16, 6.6, 150), (20, 7.5, 150), (32, 9.9, 150), (40, 11.7, 150), (63, 16.0, 150), (80, 21.0, 160), (100, 25.5, 160), (125, 31.5, 170)]:
+        add("MCB", "Generic IEC", "IEC 60898-1 3P", amps, f"{amps} A",
+            f"MCB {amps}A (3P Miniature Breaker)", "Feeder", amps, pn, 0.0, "quadratic", h,
+            "IEC 60898-1 Table 6 / IEC TR 60890 Typical 3P MCB Losses", URL_60898_1)
+
+    # 5. MCCBs (16A – 1600A)
+    mccb_list = [
+        (16, "3P Thermal-Mag", 9.0, 0, 180), (25, "3P Thermal-Mag", 10.5, 0, 180), (32, "3P Thermal-Mag", 12.0, 0, 180),
+        (40, "3P Thermal-Mag", 13.5, 0, 180), (63, "3P Thermal-Mag", 18.0, 0, 190), (100, "3P Thermal-Mag", 24.0, 0, 200),
+        (125, "3P Thermal-Mag", 27.0, 0, 200), (160, "3P Electronic", 30.0, 2, 200), (250, "3P Electronic", 42.0, 2, 250),
+        (400, "3P Electronic", 66.0, 3, 300), (630, "3P Electronic", 114.0, 4, 400), (800, "3P Electronic", 165.0, 5, 450),
+        (1000, "3P Electronic", 210.0, 6, 500), (1250, "3P Electronic", 270.0, 8, 550), (1600, "3P Electronic", 360.0, 10, 600),
+    ]
+    for amps, ser, pn, pfix, h in mccb_list:
+        add("MCCB", "Generic IEC", ser, amps, f"{amps} A",
+            f"MCCB {amps}A ({ser})", "Feeder", amps, pn, pfix, "quadratic", h,
+            "IEC 60947-2 / IEC TR 60890 Typical 3-Pole MCCB Losses", URL_60947_2)
+
+    # 6. Soft Starters — Bypassed Run (7.5–250 kW) + Non-Bypassed SCR
+    ss_list = [
+        (7.5, 25, 13, 15, 260, False), (11, 32, 16, 18, 280, False), (15, 40, 19, 20, 300, False),
+        (18.5, 50, 23, 22, 310, False), (22, 63, 27, 22, 320, False), (30, 80, 36, 25, 350, False),
+        (37, 100, 41, 28, 360, False), (45, 125, 48, 32, 380, False), (55, 160, 59, 35, 420, False),
+        (75, 200, 74, 42, 460, False), (90, 250, 88, 48, 500, False), (110, 250, 100, 55, 540, False),
+        (132, 315, 119, 60, 580, False), (160, 400, 139, 68, 620, False), (200, 400, 172, 75, 680, False),
+        (250, 630, 220, 85, 740, False), (30, 80, 232, 35, 400, True), (75, 200, 562, 55, 520, True),
+    ]
+    for kw, frame_a, pn, pfix, h, non_byp in ss_list:
+        kw_str = f"{kw:g}"
+        ser = "IEC 60947-4-2 Non-Bypassed SCR" if non_byp else "IEC 60947-4-2 Bypassed Run"
+        lbl = "Non-Bypassed SCR" if non_byp else "Bypassed"
+        lmod = "vsd" if non_byp else "quadratic"
+        add("Soft Starter", "Generic IEC", ser, kw, f"{kw_str} kW ({frame_a}A)",
+            f"Soft Starter {kw_str} kW ({lbl}, {frame_a}A)", "Feeder", frame_a, pn, pfix, lmod, h,
+            "IEC 60947-4-2 Semiconductor Motor Controller Thermal Data", URL_60947_4)
+
+    # 7. Spare / Placeholder / Aux Chambers
+    add("Spare / Placeholder", "Switchgear Enclosure", "Blank Reserve Bay", 0, "0 W",
+        "Spare Space / Blank Reserve Bay (0W)", "Spare / Placeholder", 1, 0.0, 0.0, "quadratic", 250,
+        "IEC 61439-1 Physical Reserve Allocation", URL_61439_1)
+    add("Spare / Placeholder", "Switchgear Enclosure", "Future Placeholder", 0, "0 W",
+        "Placeholder Bay (0W)", "Spare / Placeholder", 1, 0.0, 0.0, "quadratic", 300,
+        "IEC 61439-1 Undefined Future Equipment Space", URL_61439_1)
+    add("Spare / Placeholder", "Switchgear Enclosure", "Metering / Control Aux", 15, "15 W aux",
+        "Metering / Marshalling Chamber (15W)", "Spare / Placeholder", 1, 0.0, 15.0, "quadratic", 300,
+        "Typical Panel Metering / Control PSU Allowance", URL_61439_1)
+
+    # 8. Star-Delta Starters — Complete IEC 400V Series (11 kW – 160 kW)
+    sd_list = [
+        (11, 32, 29, 19, 300), (15, 40, 35, 20, 320), (18.5, 50, 41, 22, 340),
+        (22, 63, 48, 23, 360), (30, 80, 58, 24, 380), (37, 100, 68, 27, 400),
+        (45, 125, 81, 28, 420), (55, 160, 93, 30, 430), (75, 200, 108, 34, 450),
+        (90, 250, 130, 36, 500), (110, 250, 153, 40, 540), (132, 315, 180, 42, 580),
+        (160, 400, 214, 48, 620),
+    ]
+    for kw, frame_a, pn, pfix, h in sd_list:
+        kw_str = f"{kw:g}"
+        add("Star-Delta Starter", "Generic IEC", "IEC 60947-4-1 Star-Delta", kw, f"{kw_str} kW ({frame_a}A)",
+            f"Star-Delta Starter {kw_str} kW ({frame_a}A frame)", "Feeder", frame_a, pn, pfix, "quadratic", h,
+            "IEC 60947-4-1 / IEC TR 60890 Star-Delta Run Mode (MCCB + Main & Delta Contactors + O/L)", URL_60947_4)
+
+    # 9. VSDs / Inverters — Complete IEC Series (0.75 kW – 250 kW)
+    vsd_list = [
+        (0.75, 4, 4.5, 4, 12, 260), (1.5, 6, 4.2, 5, 15, 280), (2.2, 9, 4.0, 6, 18, 300),
+        (4, 12, 3.8, 7, 22, 320), (5.5, 16, 3.5, 8, 25, 340), (7.5, 20, 3.3, 9, 28, 360),
+        (11, 25, 3.1, 11, 32, 380), (15, 32, 3.0, 12, 35, 400), (18.5, 40, 2.9, 14, 40, 440),
+        (22, 50, 2.9, 16, 45, 480), (30, 63, 2.8, 20, 52, 520), (37, 80, 2.8, 24, 58, 560),
+        (45, 90, 2.8, 28, 65, 600), (55, 125, 2.7, 34, 75, 660), (75, 160, 2.6, 44, 90, 740),
+        (90, 200, 2.6, 52, 105, 820), (110, 250, 2.5, 64, 120, 900), (132, 315, 2.5, 76, 135, 980),
+        (160, 400, 2.4, 92, 155, 1080), (200, 400, 2.4, 115, 180, 1200), (250, 630, 2.3, 145, 210, 1320),
+    ]
+    for kw, frame_a, pct, mccb_w, fan_w, h in vsd_list:
+        kw_str = f"{kw:g}"
+        pn_tot = round(mccb_w + kw * 1000.0 * (pct / 100.0), 1)
+        add("VSD / Inverter", "Generic IEC", "IEC 61800-9-2 VSD (IE2)", kw, f"{kw_str} kW ({frame_a}A)",
+            f"VSD / Inverter Drive {kw_str} kW ({pct:.1f}% loss)", "Feeder", frame_a, pn_tot, fan_w, "vsd", h,
+            "IEC 61800-9-2 Reference Complete Drive Module (CDM) Losses", URL_61800_9)
+
+    raw.sort(key=lambda x: x[0])
+    return [row for _, row in raw]
 
 
 def generate_workbook():
@@ -233,7 +334,8 @@ def generate_workbook():
     ws_bus  = wb.create_sheet("02_Board_&_Busbars")
     ws_fed  = wb.create_sheet("03_Feeder_Schedule")
     ws_seg  = wb.create_sheet("04_Busbar_Segments")
-    ws_ga   = wb.create_sheet("05_GA_Heat_Map")
+    ws_sld  = wb.create_sheet("05a_Live_SLD_HeatMap")
+    ws_ga   = wb.create_sheet("05b_Live_GA_HeatMap")
     ws_lib  = wb.create_sheet("06_Device_&_Fuse_Library")
     ws_rm   = wb.create_sheet("07_Room_Ventilation")
     ws_help = wb.create_sheet("08_Calc_Help_&_Method")
@@ -244,13 +346,14 @@ def generate_workbook():
     ws_bus.sheet_properties.tabColor = "1E3A5F"
     ws_fed.sheet_properties.tabColor = "1E3A5F"
     ws_seg.sheet_properties.tabColor = "DC2626"   # Red tab = Protected Calculation Engine
-    ws_ga.sheet_properties.tabColor  = "DC2626"   # Red tab = Protected Visual GA
+    ws_sld.sheet_properties.tabColor = "EA580C"   # Orange tab = Live Visual SLD Heat Map
+    ws_ga.sheet_properties.tabColor  = "EA580C"   # Orange tab = Live Visual GA Heat Map
     ws_lib.sheet_properties.tabColor = "15803D"
     ws_rm.sheet_properties.tabColor  = "0D9488"
     ws_help.sheet_properties.tabColor = "7C3AED"
 
     LIB_START = 5
-    LIB_END = 75
+    LIB_END = 185
     COL_START = 6
     COL_END = 13
     FEED_START = 17
@@ -261,10 +364,10 @@ def generate_workbook():
     VBB_END = 52
 
     lib_name_rng = f"'06_Device_&_Fuse_Library'!$A${LIB_START}:$A${LIB_END}"
-    lib_in_rng   = f"'06_Device_&_Fuse_Library'!$D${LIB_START}:$D${LIB_END}"
-    lib_pn_rng   = f"'06_Device_&_Fuse_Library'!$E${LIB_START}:$E${LIB_END}"
-    lib_fix_rng  = f"'06_Device_&_Fuse_Library'!$F${LIB_START}:$F${LIB_END}"
-    lib_mod_rng  = f"'06_Device_&_Fuse_Library'!$G${LIB_START}:$G${LIB_END}"
+    lib_in_rng   = f"'06_Device_&_Fuse_Library'!$G${LIB_START}:$G${LIB_END}"
+    lib_pn_rng   = f"'06_Device_&_Fuse_Library'!$H${LIB_START}:$H${LIB_END}"
+    lib_fix_rng  = f"'06_Device_&_Fuse_Library'!$I${LIB_START}:$I${LIB_END}"
+    lib_mod_rng  = f"'06_Device_&_Fuse_Library'!$J${LIB_START}:$J${LIB_END}"
 
     # =========================================================================
     # SHEET 00: 00_Simple_Mode (Rapid Crude Assessment + Seeds Detailed Mode!)
@@ -292,8 +395,8 @@ def generate_workbook():
     # B14=Outgoing Feeders/Fuses Qty, B15=Typical Feeder/HRC Template,
     # B16=Avg Running Load %, B17=Board RDF, B18=Future Growth %, B19=N-1 Transfer Load (A)
     smp_inputs = [
-        (6,  "Main Busbar Preset", "1600 A — 2×75×6 mm Cu (900 mm²)", "-", "@",
-         "Seeds Detailed Mode Main Busbar! Typ: 1600A (2×75×6), 2500A (2×100×10), 3200A (3×100×10)"),
+        (6,  "Main Busbar Preset", "1250 A — 2×75×6 mm Cu (900 mm²)", "-", "@",
+         "Seeds Detailed Mode Main Busbar! Typ: 1250A (2×75×6, 900mm²), 1600A (2×80×8), 2500A (2×100×10)"),
         (7,  "Switchboard Topology", "Single Incomer + Interconnector (A→B)", "-", "@",
          "Single Incomer | Single + Interconnector | Dual + Bus Coupler"),
         (8,  "Estimated Switchboard Columns", 5, "cols", "0",
@@ -343,7 +446,8 @@ def generate_workbook():
         ("630 A — 1×50×6 mm Cu (300 mm²)",    630,  1, 50,  6),
         ("800 A — 1×60×8 mm Cu (480 mm²)",    800,  1, 60,  8),
         ("1000 A — 2×50×6 mm Cu (600 mm²)",   1000, 2, 50,  6),
-        ("1600 A — 2×75×6 mm Cu (900 mm²)",   1600, 2, 75,  6),
+        ("1250 A — 2×75×6 mm Cu (900 mm²)",   1250, 2, 75,  6),
+        ("1600 A — 2×80×8 mm Cu (1280 mm²)",  1600, 2, 80,  8),
         ("2000 A — 2×80×10 mm Cu (1600 mm²)", 2000, 2, 80, 10),
         ("2500 A — 2×100×10 mm Cu (2000 mm²)",2500, 2, 100, 10),
         ("3200 A — 3×100×10 mm Cu (3000 mm²)",3200, 3, 100, 10),
@@ -367,7 +471,7 @@ def generate_workbook():
                 ws_smp.cell(r, cc).alignment = ALIGN_R
 
     # Simple Mode Dropdowns
-    dv_sm_bb = DataValidation(type="list", formula1="=$A$37:$A$44", allow_blank=False)
+    dv_sm_bb = DataValidation(type="list", formula1="=$A$37:$A$45", allow_blank=False)
     dv_sm_topo = DataValidation(type="list", formula1='"Single Incomer,Single Incomer + Interconnector (A→B),Dual Incomer + Bus Coupler"', allow_blank=False)
     dv_sm_lib = DataValidation(type="list", formula1=f"={lib_name_rng}", allow_blank=False)
     ws_smp.add_data_validation(dv_sm_bb); dv_sm_bb.add("B6")
@@ -382,8 +486,8 @@ def generate_workbook():
         c = ws_smp.cell(22, i, h); c.font = FONT_HEADER; c.fill = FILL_HEADER; c.alignment = ALIGN_C; c.border = BORDER_CELL
 
     # Helper expressions for Simple Mode physics
-    sm_rac = "INDEX($G$37:$G$44,MATCH($B$6,$A$37:$A$44,0))"
-    sm_in  = "INDEX($B$37:$B$44,MATCH($B$6,$A$37:$A$44,0))"
+    sm_rac = "INDEX($G$37:$G$45,MATCH($B$6,$A$37:$A$45,0))"
+    sm_in  = "INDEX($B$37:$B$45,MATCH($B$6,$A$37:$A$45,0))"
     sm_len = "MAX(1.2,$B$8*0.78)"
     sm_dol_in = f"IFERROR(INDEX({lib_in_rng},MATCH($B$11,{lib_name_rng},0)),100)"
     sm_dol_pn = f"IFERROR(INDEX({lib_pn_rng},MATCH($B$11,{lib_name_rng},0)),55)"
@@ -452,23 +556,24 @@ def generate_workbook():
     configure_print(ws_smp, landscape=True, fit_width=1)
 
     # =========================================================================
-    # SHEET 06: 06_Device_&_Fuse_Library
+    # SHEET 06: 06_Device_&_Fuse_Library (Sorted: Type -> Manufacturer -> Model -> Size + Evidence Links!)
     # =========================================================================
     style_title_banner(
-        ws_lib, 9,
-        "PROTECTIVE DEVICE, STARTER & EATON HRC FUSE LIBRARY (EDITABLE)",
-        "Generic IEC 60947 templates + Eaton Bussmann NH gG High Rupturing Capacity (HRC) Fuse Links (2A–1250A, Data Sheet 10164). Add custom parts in rows 61–75."
+        ws_lib, 13,
+        "PROTECTIVE DEVICE, STARTER & EATON HRC FUSE LIBRARY (SORTED: TYPE → MFG → MODEL → SIZE)",
+        "148 standard IEC 60947 / 61800 devices (incl. 1250A Interconnector ACB, full DOL, Star-Delta, Soft Starters, VSDs & 31 Eaton NH gG HRC fuses 2A–1250A) with optional datasheet evidence links."
     )
     lib_headers = [
-        "Template Name (Dropdown Key)", "Category", "Default Role",
-        "Rated Current In (A)", "Rated 3P Variable Loss Pn (W)", "Fixed / Standby Loss (W)",
-        "Scaling Model", "Default Tier Height (mm)", "Manufacturer Basis / Notes"
+        "Template Name (Dropdown Key)", "Type (Category)", "Manufacturer", "Model / Series", "Size",
+        "Default Role", "Rated In (A)", "Rated 3P Pn (W)", "Fixed Loss (W)",
+        "Scaling Model", "Height (mm)", "Datasheet / Evidence Reference", "Source Link (Optional)"
     ]
-    ws_lib.row_dimensions[4].height = 26
+    ws_lib.row_dimensions[4].height = 28
     for idx, h in enumerate(lib_headers, 1):
         c = ws_lib.cell(4, idx, h); c.font = FONT_HEADER; c.fill = FILL_HEADER; c.alignment = ALIGN_C; c.border = BORDER_CELL
 
     lib_data = build_library_data()
+    font_url = Font(name=FONT_FAMILY, size=9, color="0284C7", underline="single")
     for i, row_vals in enumerate(lib_data):
         r = LIB_START + i
         ws_lib.row_dimensions[r].height = 19
@@ -476,23 +581,30 @@ def generate_workbook():
         for col_i, val in enumerate(row_vals, 1):
             c = ws_lib.cell(r, col_i, val)
             c.border = BORDER_CELL
-            c.fill = FILL_INPUT if col_i in (4, 5, 6, 8) else fill
-            c.font = FONT_INPUT if col_i in (4, 5, 6, 8) else (FONT_HINT if col_i == 9 else FONT_CALC)
-            c.alignment = ALIGN_R if col_i in (4, 5, 6, 8) else (ALIGN_C if col_i in (2, 3, 7) else ALIGN_L)
-            if col_i in (4, 8):
-                c.number_format = "#,##0"
-            elif col_i in (5, 6):
-                c.number_format = "#,##0.0"
+            if col_i == 13 and val:
+                c.value = "Open Datasheet / Std ↗"
+                c.hyperlink = val
+                c.font = font_url
+                c.fill = FILL_INPUT
+                c.alignment = ALIGN_C
+            else:
+                c.fill = FILL_INPUT if col_i in (7, 8, 9, 11, 12, 13) else fill
+                c.font = FONT_INPUT if col_i in (7, 8, 9, 11) else (FONT_HINT if col_i == 12 else FONT_CALC)
+                c.alignment = ALIGN_R if col_i in (7, 8, 9, 11) else (ALIGN_C if col_i in (2, 5, 6, 10) else ALIGN_L)
+                if col_i in (7, 11):
+                    c.number_format = "#,##0"
+                elif col_i in (8, 9):
+                    c.number_format = "#,##0.0"
 
     for r in range(LIB_START + len(lib_data), LIB_END + 1):
         ws_lib.row_dimensions[r].height = 18
-        for col_i in range(1, 10):
+        for col_i in range(1, 14):
             c = ws_lib.cell(r, col_i, "")
-            c.border = BORDER_CELL; c.fill = FILL_INPUT if col_i <= 8 else FILL_WHITE; c.font = FONT_INPUT
+            c.border = BORDER_CELL; c.fill = FILL_INPUT; c.font = FONT_INPUT
 
-    for i, w in enumerate([42, 18, 18, 16, 20, 18, 14, 16, 56], 1):
+    for i, w in enumerate([42, 18, 16, 26, 13, 14, 12, 14, 13, 12, 12, 46, 22], 1):
         ws_lib.column_dimensions[get_column_letter(i)].width = w
-    ws_lib.freeze_panes = "A5"
+    ws_lib.freeze_panes = "B5"
     configure_print(ws_lib, landscape=True, fit_width=1, repeat_rows="1:4")
 
     # =========================================================================
@@ -642,10 +754,10 @@ def generate_workbook():
         c = ws_bus.cell(36, idx, h); c.font = FONT_HEADER; c.fill = FILL_HEADER; c.alignment = ALIGN_C if idx in (2, 3, 4, 5) else ALIGN_L; c.border = BORDER_CELL
     ws_bus.cell(36, 7).fill = FILL_HEADER; ws_bus.cell(36, 7).border = BORDER_CELL
 
-    sm_lu = lambda col_l: f"INDEX('00_Simple_Mode'!${col_l}$37:${col_l}$44,MATCH('00_Simple_Mode'!$B$6,'00_Simple_Mode'!$A$37:$A$44,0))"
+    sm_lu = lambda col_l: f"INDEX('00_Simple_Mode'!${col_l}$37:${col_l}$45,MATCH('00_Simple_Mode'!$B$6,'00_Simple_Mode'!$A$37:$A$45,0))"
     bb_inputs = [
-        (37, "Type 439 / IEC 61439 Cert Ref", "Type 439 — 2×75×6mm", "Dropper 1×60×6mm", "Riser 2×75×6mm", "-", "@", "Manufacturer type test certificate reference"),
-        (38, "Busbar Rated Current (In)", f"=IF($B$9=\"Yes\",{sm_lu('B')},1600)", 800, f"=IF($B$9=\"Yes\",{sm_lu('B')},1600)", "A", "#,##0", "Inherits from Simple Mode when B9=Yes; or overwrite directly!"),
+        (37, "Type 439 / IEC 61439 Cert Ref", "Type 439 — 2×75×6mm (1250A)", "Dropper 1×60×6mm", "Riser 2×75×6mm (1250A)", "-", "@", "Manufacturer type test certificate reference"),
+        (38, "Busbar Rated Current (In)", f"=IF($B$9=\"Yes\",{sm_lu('B')},1250)", 800, f"=IF($B$9=\"Yes\",{sm_lu('B')},1250)", "A", "#,##0", "Inherits from Simple Mode when B9=Yes; or overwrite directly!"),
         (39, "Conductor Material", "Copper (Cu 100% IACS)", "Copper (Cu 100% IACS)", "Copper (Cu 100% IACS)", "-", "@", "Select from Material Table above"),
         (40, "Parallel Bars per Phase (n)", f"=IF($B$9=\"Yes\",{sm_lu('C')},2)", 1, f"=IF($B$9=\"Yes\",{sm_lu('C')},2)", "bars", "0", "Typ: 1–4 parallel bars/phase"),
         (41, "Bar Width (w)", f"=IF($B$9=\"Yes\",{sm_lu('D')},75)", 60, f"=IF($B$9=\"Yes\",{sm_lu('D')},75)", "mm", "0", "Typ: 40–100 mm"),
@@ -810,7 +922,7 @@ def generate_workbook():
         c = ws_fed.cell(16, i, h); c.font = FONT_HEADER; c.fill = FILL_HEADER; c.alignment = ALIGN_C; c.border = BORDER_CELL
 
     preset_feeders = [
-        ("COL-01", 1, "INC-A", "Main Incomer ACB 2500A (Tx-A)", "Incomer", "Active", "ACB 2500A Drawout (3P/4P)", 900, "Auto", 0, 0, 0.90, 1.00, 1.00),
+        ("COL-01", 1, "INC-A", "Main Incomer ACB 2500A (Tx-A)", "Incomer", "Active", "ACB Incomer 2500A Drawout (3P/4P)", 900, "Auto", 0, 0, 0.90, 1.00, 1.00),
         ("COL-02", 1, "M-101", "Cooling Water Pump 1 — 55 kW DOL", "Feeder", "Active", "DOL Starter 55 kW (160A frame)", 350, "kW", 55, 0, 0.87, 0.94, 0.88),
         ("COL-02", 2, "M-102", "Process Booster Pump — 37 kW DOL", "Feeder", "Active", "DOL Starter 37 kW (100A frame)", 300, "kW", 37, 0, 0.86, 0.93, 0.85),
         ("COL-02", 3, "M-103", "Extraction Fan 1 — 22 kW DOL", "Feeder", "Active", "DOL Starter 22 kW (63A frame)", 260, "kW", 22, 0, 0.85, 0.92, 0.90),
@@ -819,13 +931,13 @@ def generate_workbook():
         ("COL-03", 1, "M-201", "Main Air Compressor — 75 kW Star-Delta", "Feeder", "Active", "Star-Delta Starter 75 kW (200A frame)", 450, "kW", 75, 0, 0.88, 0.94, 0.85),
         ("COL-03", 2, "VSD-202", "Variable Speed Blower — 45 kW VSD", "Feeder", "Active", "VSD / Inverter Drive 45 kW (2.8% loss)", 600, "kW", 45, 0, 0.95, 0.94, 0.82),
         ("COL-03", 3, "SS-203", "Chilled Water Pump — 30 kW Soft Starter", "Feeder", "Active", "Soft Starter 30 kW (Bypassed, 80A)", 350, "kW", 30, 0, 0.86, 0.93, 0.85),
-        ("COL-03", 4, "VSD-204 (FUT)", "Future Dosing Blower — 15 kW VSD", "Feeder", "Future", "VSD / Inverter Drive 15 kW (3% loss)", 320, "kW", 15, 0, 0.95, 0.93, 0.85),
+        ("COL-03", 4, "VSD-204 (FUT)", "Future Dosing Blower — 15 kW VSD", "Feeder", "Future", "VSD / Inverter Drive 15 kW (3.0% loss)", 320, "kW", 15, 0, 0.95, 0.93, 0.85),
         ("COL-04", 1, "F-301", "Sub-DB Process Area 1 (Eaton 400NHG2B HRC)", "Feeder", "Active", "Eaton 400NHG2B — 400A NH2 gG HRC (30.0W/link)", 350, "Amps", 280, 0, 0.90, 1.00, 1.00),
         ("COL-04", 2, "F-302", "HVAC & Switchroom Cooling (250A MCCB)", "Feeder", "Active", "MCCB 250A (3P Electronic)", 280, "Amps", 165, 0, 0.90, 1.00, 1.00),
         ("COL-04", 3, "F-303", "Lighting & Small Power DB (160A MCCB)", "Feeder", "Active", "MCCB 160A (3P Electronic)", 240, "Amps", 95, 0, 0.92, 1.00, 1.00),
         ("COL-04", 4, "F-304", "Workshop Sub-Feeder (Eaton 250NHG1B HRC)", "Feeder", "Active", "Eaton 250NHG1B — 250A NH1 gG HRC (19.0W/link)", 300, "Amps", 140, 0, 0.90, 1.00, 1.00),
         ("COL-04", 5, "F-305 (FUT)", "Future Sub-DB Expansion (250A MCCB)", "Feeder", "Future", "MCCB 250A (3P Electronic)", 280, "Amps", 180, 0, 0.90, 1.00, 1.00),
-        ("COL-05", 1, "IC-AB", "Interconnector to MSB-B (Firm Supply Link)", "Interconnector", "Active", "Interconnector ACB 1600A (Firm Supply)", 850, "Amps", 0, "=IF('02_Board_&_Busbars'!$B$9=\"Yes\",'00_Simple_Mode'!$B$19,850)", 0.90, 1.00, 1.00),
+        ("COL-05", 1, "IC-AB", "Interconnector to MSB-B (1250A ACB Firm Supply)", "Interconnector", "Active", "Interconnector ACB 1250A Drawout (3P/4P)", 740, "Amps", 0, "=IF('02_Board_&_Busbars'!$B$9=\"Yes\",'00_Simple_Mode'!$B$19,850)", 0.90, 1.00, 1.00),
     ]
 
     for idx in range(FEED_END - FEED_START + 1):
@@ -1026,8 +1138,12 @@ def generate_workbook():
         ws_seg.cell(r, 2, f"=IF({is_vbb_tier},'03_Feeder_Schedule'!B{fr},\"\")").alignment = ALIGN_C
         ws_seg.cell(r, 3, f"=IF({is_vbb_tier},'03_Feeder_Schedule'!C{fr},\"\")").alignment = ALIGN_L
         ws_seg.cell(r, 4, f"=IF({is_vbb_tier},'03_Feeder_Schedule'!R{fr},0)").number_format = "#,##0"
+        has_prev_vbb = (
+            f"(COUNTIFS('03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\"<\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\")"
+            f"+COUNTIFS('03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\"<\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Interconnector\"))"
+        )
         ws_seg.cell(r, 5,
-            f"=IF(NOT({is_vbb_tier}),0,IF(B{r}=1,ABS(('02_Board_&_Busbars'!$B$18-IF('02_Board_&_Busbars'!$B$21=\"Top\",'02_Board_&_Busbars'!$B$20/2,'02_Board_&_Busbars'!$B$18-'02_Board_&_Busbars'!$B$20/2))-D{r})/1000,"
+            f"=IF(NOT({is_vbb_tier}),0,IF({has_prev_vbb}=0,ABS(('02_Board_&_Busbars'!$B$18-IF('02_Board_&_Busbars'!$B$21=\"Top\",'02_Board_&_Busbars'!$B$20/2,'02_Board_&_Busbars'!$B$18-'02_Board_&_Busbars'!$B$20/2))-D{r})/1000,"
             f"(('03_Feeder_Schedule'!H{fr}/2)+SUMIFS('03_Feeder_Schedule'!$H${FEED_START}:$H${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},B{r}-1)/2)/1000))"
         ).number_format = "0.00"
         ws_seg.cell(r, 6, f"=IF(A{r}=\"\",\"\",IFERROR(INDEX('03_Feeder_Schedule'!$D${COL_START}:$D${COL_END},MATCH(A{r},'03_Feeder_Schedule'!$A${COL_START}:$A${COL_END},0)),\"VBB-Std\"))").alignment = ALIGN_C
@@ -1075,52 +1191,246 @@ def generate_workbook():
     configure_print(ws_seg, landscape=True, fit_width=1)
 
     # =========================================================================
-    # SHEET 05: 05_GA_Heat_Map (PROTECTED)
+    # SHEET 05a: 05a_Live_SLD_HeatMap (LIVE VISUAL SINGLE LINE DIAGRAM + HEAT MAP!)
+    # =========================================================================
+    key_rng  = f"'03_Feeder_Schedule'!$AH${FEED_START}:$AH${FEED_END}"
+    tag_rng  = f"'03_Feeder_Schedule'!$C${FEED_START}:$C${FEED_END}"
+    role_rng = f"'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END}"
+    stat_rng = f"'03_Feeder_Schedule'!$F${FEED_START}:$F${FEED_END}"
+    tpl_rng  = f"'03_Feeder_Schedule'!$G${FEED_START}:$G${FEED_END}"
+    ht_rng   = f"'03_Feeder_Schedule'!$H${FEED_START}:$H${FEED_END}"
+    iop_rng  = f"'03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END}"
+    el_rng   = f"'03_Feeder_Schedule'!$R${FEED_START}:$R${FEED_END}"
+    w_rng    = f"'03_Feeder_Schedule'!$Y${FEED_START}:$Y${FEED_END}"
+    col_rng  = f"'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END}"
+
+    style_title_banner(
+        ws_sld, 10,
+        "LIVE SINGLE LINE DIAGRAM (SLD) — DYNAMIC ARRANGEMENT & COLOUR-CODED HEAT MAP",
+        "Updates automatically from '03_Feeder_Schedule' & '01_Summary' Active Scenario. Supports Interconnector left/right of Incomer OR stacked in Incomer column tier!"
+    )
+    ws_sld.row_dimensions[4].height = 22
+    ws_sld.merge_cells("A4:I4")
+    c_sld_bar = ws_sld.cell(
+        4, 1,
+        "=\"SCENARIO: \"&'01_Summary'!C9&\"   |   TOTAL HEAT: \"&TEXT('01_Summary'!A13,\"0.000\")&\" kW   |   HBB: \"&'02_Board_&_Busbars'!B40&\"×\"&'02_Board_&_Busbars'!B41&\"×\"&'02_Board_&_Busbars'!B42&\" mm Cu (\"&'02_Board_&_Busbars'!B38&\"A)   |   COOLING: \"&'07_Room_Ventilation'!B28"
+    )
+    c_sld_bar.font = FONT_SECTION; c_sld_bar.fill = FILL_SECTION; c_sld_bar.alignment = ALIGN_C
+    for cc in range(1, 10): ws_sld.cell(4, cc).border = BORDER_CELL
+
+    # SLD Zone Labels (Column A)
+    sld_zone_rows = [
+        (5,  20, "INCOMING SUPPLY\n(Transformer Feed)", FILL_ZEBRA),
+        (6,  24, "INCOMER BREAKER\n[ X ] ACB Symbol", FILL_ZEBRA),
+        (7,  20, "Incomer Heat (W)", FILL_WHITE),
+        (8,  22, "COLUMN / BAY", FILL_HEADER),
+        (9,  24, "MAIN HORIZONTAL\nBUSBAR (HBB Spine)", FILL_HERO),
+        (10, 20, "HBB Heat (W/m)", FILL_WHITE),
+        (11, 20, "HBB Span Loss (W)", FILL_WHITE),
+        (12, 22, "VERTICAL DROPPER\n(┬ VBB Heat W)", FILL_ZEBRA),
+    ]
+    for rr, rh, zlbl, zfill in sld_zone_rows:
+        ws_sld.row_dimensions[rr].height = rh
+        cz = ws_sld.cell(rr, 1, zlbl)
+        cz.font = FONT_HEADER if rr == 8 else FONT_CALC_BOLD
+        cz.fill = zfill; cz.alignment = ALIGN_C; cz.border = BORDER_CELL
+
+    border_bus = Border(
+        top=Side(style="thick", color=NAVY_DARK),
+        bottom=Side(style="thick", color=NAVY_DARK),
+        left=Side(style="thin", color="94A3B8"),
+        right=Side(style="thin", color="94A3B8"),
+    )
+
+    for ci in range(8):
+        col_num = 2 + ci
+        cr = COL_START + ci
+        cid_txt = f"COL-0{ci+1}"
+        has_inc_expr = f"COUNTIFS({col_rng},\"{cid_txt}\",{role_rng},\"Incomer\")>0"
+        has_col_expr = f"'03_Feeder_Schedule'!C{cr}>0"
+
+        # Row 5: Incoming Transformer arrow if this column has an Incomer
+        c5 = ws_sld.cell(5, col_num, f"=IF({has_inc_expr},\"⚡ TX SUPPLY ▼\",\"\")")
+        c5.font = Font(name=FONT_FAMILY, size=9, bold=True, color="0369A1"); c5.alignment = ALIGN_C; c5.border = BORDER_CELL
+        c5.fill = PatternFill("solid", fgColor="E0F2FE")
+
+        # Row 6: Incomer ACB symbol + live supply Amps
+        c6 = ws_sld.cell(
+            6, col_num,
+            f"=IF({has_inc_expr},\"[ X ] INCOMER · \"&TEXT('03_Feeder_Schedule'!I{cr},\"#,##0\")&\" A\",IF({has_col_expr},\"│\",\"\"))"
+        )
+        c6.font = FONT_CALC_BOLD; c6.alignment = ALIGN_C; c6.border = BORDER_CELL; c6.fill = FILL_WHITE
+
+        # Row 7: Incomer Heat (W) — Heat Map coloured!
+        c7 = ws_sld.cell(7, col_num, f"=SUMIFS({w_rng},{col_rng},\"{cid_txt}\",{role_rng},\"Incomer\")")
+        c7.font = FONT_CALC_BOLD; c7.alignment = ALIGN_C; c7.border = BORDER_CELL; c7.number_format = "#,##0.0\" W\";;\"-\""
+
+        # Row 8: Column Header
+        c8 = ws_sld.cell(8, col_num, f"=IF({has_col_expr},'03_Feeder_Schedule'!B{cr},\"{cid_txt} (Unused)\")")
+        c8.font = FONT_HEADER; c8.fill = FILL_HEADER; c8.alignment = ALIGN_C; c8.border = BORDER_CELL
+
+        # Row 9: Main Horizontal Busbar (HBB) graphic + bidirectional current arrow!
+        if ci < 7:
+            c9 = ws_sld.cell(
+                9, col_num,
+                f"=IF('04_Busbar_Segments'!C{HBB_START+ci}>0,\"══ \"&'04_Busbar_Segments'!E{HBB_START+ci}&\" \"&TEXT('04_Busbar_Segments'!D{HBB_START+ci},\"#,##0\")&\" A ══\",IF({has_col_expr},\"═══ HBB END ═══\",\"\"))"
+            )
+            c10 = ws_sld.cell(10, col_num, f"='04_Busbar_Segments'!H{HBB_START+ci}")
+            c11 = ws_sld.cell(11, col_num, f"='04_Busbar_Segments'!K{HBB_START+ci}")
+        else:
+            c9 = ws_sld.cell(9, col_num, f"=IF({has_col_expr},\"═══ HBB END ═══\",\"\")")
+            c10 = ws_sld.cell(10, col_num, 0)
+            c11 = ws_sld.cell(11, col_num, 0)
+        c9.font = Font(name="Consolas", size=9, bold=True, color=NAVY_DARK); c9.alignment = ALIGN_C; c9.border = border_bus; c9.fill = FILL_HERO
+        c10.font = FONT_CALC_BOLD; c10.alignment = ALIGN_C; c10.border = BORDER_CELL; c10.number_format = "0.0\" W/m\";;\"-\""
+        c11.font = FONT_CALC_BOLD; c11.alignment = ALIGN_C; c11.border = BORDER_CELL; c11.number_format = "#,##0.0\" W\";;\"-\""
+
+        # Row 12: Vertical Busbar Dropper (┬ VBB) Heat (W) — Heat Map coloured!
+        c12 = ws_sld.cell(12, col_num, f"='03_Feeder_Schedule'!K{cr}")
+        c12.font = FONT_CALC_BOLD; c12.alignment = ALIGN_C; c12.border = BORDER_CELL; c12.number_format = "\"┬ VBB: \"#,##0.0\" W\";;\"—\""
+
+    # Rows 13..28: 8 Live SLD Branch Tiers (2 rows per tier: Graphic/Tag/Amps + Heat W Heat-Mapped!)
+    for tier_n in range(1, 9):
+        r_sym = 13 + (tier_n - 1) * 2
+        r_w   = r_sym + 1
+        ws_sld.row_dimensions[r_sym].height = 30
+        ws_sld.row_dimensions[r_w].height = 19
+
+        c_l1 = ws_sld.cell(r_sym, 1, f"Tier {tier_n}\nBranch & Load")
+        c_l1.font = FONT_CALC_BOLD; c_l1.fill = FILL_ZEBRA; c_l1.alignment = ALIGN_C; c_l1.border = BORDER_CELL
+        c_l2 = ws_sld.cell(r_w, 1, f"Tier {tier_n} Heat (W)")
+        c_l2.font = FONT_HINT; c_l2.fill = FILL_WHITE; c_l2.alignment = ALIGN_C; c_l2.border = BORDER_CELL
+
+        for ci in range(8):
+            col_num = 2 + ci
+            key_str = f"\"COL-0{ci+1}|{tier_n}\""
+            role_lk = f"INDEX({role_rng},MATCH({key_str},{key_rng},0))"
+            tag_lk  = f"INDEX({tag_rng},MATCH({key_str},{key_rng},0))"
+            iop_lk  = f"INDEX({iop_rng},MATCH({key_str},{key_rng},0))"
+            stat_lk = f"INDEX({stat_rng},MATCH({key_str},{key_rng},0))"
+
+            sym_formula = (
+                f"=IFERROR("
+                f"IF({role_lk}=\"Incomer\",\"▲ [ACB] \"&{tag_lk}&CHAR(10)&\"(Incomer Top · \"&TEXT({iop_lk},\"0\")&\" A)\","
+                f"IF({role_lk}=\"Interconnector\",\"├─ [⇄ IC] \"&{tag_lk}&\" → B-SIDE\"&CHAR(10)&TEXT({iop_lk},\"#,##0\")&\" A (\"&{stat_lk}&\")\","
+                f"IF({role_lk}=\"Bus Coupler\",\"══ [ X ] \"&{tag_lk}&CHAR(10)&\"Bus Coupler\","
+                f"IF({role_lk}=\"Spare / Placeholder\",\"├─ [░] \"&{tag_lk}&CHAR(10)&\"Spare / Reserve\","
+                f"\"├─ [⚡] \"&{tag_lk}&CHAR(10)&TEXT({iop_lk},\"#,##0\")&\" A · \"&{stat_lk}))))"
+                f",\"\")"
+            )
+            cs = ws_sld.cell(r_sym, col_num, sym_formula)
+            cs.font = FONT_CALC_BOLD; cs.fill = FILL_ZEBRA; cs.alignment = ALIGN_C; cs.border = BORDER_CELL
+
+            cw = ws_sld.cell(r_w, col_num, f"=IFERROR(INDEX({w_rng},MATCH({key_str},{key_rng},0)),0)")
+            cw.font = FONT_CALC_BOLD; cw.alignment = ALIGN_C; cw.border = BORDER_CELL; cw.number_format = "#,##0.0\" W\";;\"-\""
+
+    # SLD Footer: Live Column Total Heat (Row 29) + Heat Map Legend (Row 31)
+    ws_sld.row_dimensions[29].height = 24
+    ws_sld.cell(29, 1, "COLUMN TOTAL HEAT (W)").font = FONT_TOTAL
+    ws_sld.cell(29, 1).fill = FILL_TOTAL; ws_sld.cell(29, 1).alignment = ALIGN_C; ws_sld.cell(29, 1).border = BORDER_TOTAL
+    for ci in range(8):
+        col_num = 2 + ci; cr = COL_START + ci
+        ct = ws_sld.cell(29, col_num, f"='03_Feeder_Schedule'!L{cr}")
+        ct.font = FONT_TOTAL; ct.alignment = ALIGN_C; ct.border = BORDER_TOTAL; ct.number_format = "#,##0.0\" W\";;\"-\""
+
+    # Heat Map Colour Legend on Row 31
+    ws_sld.row_dimensions[31].height = 20
+    ws_sld.cell(31, 1, "HEAT MAP LEGEND:").font = FONT_CALC_BOLD; ws_sld.cell(31, 1).alignment = ALIGN_C
+    for idx_lg, (lg_txt, lg_bg) in enumerate([
+        ("0 W (Idle / Spare)", "E0F2FE"),
+        ("Low (< 50 W)", "DCFCE7"),
+        ("Moderate (50–180 W)", "FEF08A"),
+        ("High (180–500 W)", "FDBA74"),
+        ("Hotspot (> 500 W)", "FCA5A5"),
+    ]):
+        clg = ws_sld.cell(31, 2 + idx_lg, lg_txt)
+        clg.font = FONT_CALC_BOLD; clg.fill = PatternFill("solid", fgColor=lg_bg); clg.alignment = ALIGN_C; clg.border = BORDER_CELL
+
+    # Live Heat Map Conditional Formatting across SLD (Incomers, HBB, VBB, All 8 Tiers, Column Totals!)
+    heat_comp_rule = ColorScaleRule(start_type="num", start_value=0, start_color="E0F2FE", mid_type="num", mid_value=150, mid_color="FEF08A", end_type="num", end_value=700, end_color="FCA5A5")
+    heat_hbb_rule  = ColorScaleRule(start_type="num", start_value=0, start_color="E0F2FE", mid_type="num", mid_value=100, mid_color="FEF08A", end_type="num", end_value=300, end_color="FCA5A5")
+    heat_col_rule  = ColorScaleRule(start_type="num", start_value=0, start_color="E0F2FE", mid_type="num", mid_value=400, mid_color="FEF08A", end_type="num", end_value=1800, end_color="FCA5A5")
+    ws_sld.conditional_formatting.add("B7:I7", heat_comp_rule)
+    ws_sld.conditional_formatting.add("B10:H10", heat_hbb_rule)
+    ws_sld.conditional_formatting.add("B11:H11", heat_comp_rule)
+    ws_sld.conditional_formatting.add("B12:I12", heat_comp_rule)
+    for tier_n in range(1, 9):
+        ws_sld.conditional_formatting.add(f"B{14 + (tier_n - 1) * 2}:I{14 + (tier_n - 1) * 2}", heat_comp_rule)
+    ws_sld.conditional_formatting.add("B29:I29", heat_col_rule)
+
+    ws_sld.column_dimensions["A"].width = 22
+    for ci in range(8): ws_sld.column_dimensions[get_column_letter(2 + ci)].width = 22
+    ws_sld.column_dimensions["J"].width = 4
+    ws_sld.freeze_panes = "B9"
+    configure_print(ws_sld, landscape=True, fit_width=1, fit_height=1)
+
+    # =========================================================================
+    # SHEET 05b: 05b_Live_GA_HeatMap (LIVE GENERAL ARRANGEMENT FRONT ELEVATION + HEAT MAP!)
     # =========================================================================
     style_title_banner(
         ws_ga, 10,
-        "GENERAL ARRANGEMENT (GA) ELEVATION BLOCK DIAGRAM & THERMAL HEATMAP",
-        "Auto-populated from 03_Feeder_Schedule & 04_Busbar_Segments. Sheet is protected against accidental edits."
+        "LIVE GENERAL ARRANGEMENT (GA) — FRONT ELEVATION CABINET VIEW & HEAT MAP",
+        "Auto-generated physical front elevation from '03_Feeder_Schedule' & '04_Busbar_Segments'. Compartments, HBB & columns are colour-coded by live heat output (W)."
     )
-    ws_ga.cell(4, 1, "ELEVATION ZONE").font = FONT_HEADER; ws_ga.cell(4, 1).fill = FILL_HEADER; ws_ga.cell(4, 1).alignment = ALIGN_C; ws_ga.cell(4, 1).border = BORDER_CELL
-    ws_ga.row_dimensions[4].height = 24; ws_ga.row_dimensions[5].height = 20; ws_ga.row_dimensions[6].height = 26
-    ws_ga.cell(5, 1, "Cubicle Width (mm)").font = FONT_CALC_BOLD; ws_ga.cell(5, 1).fill = FILL_ZEBRA; ws_ga.cell(5, 1).border = BORDER_CELL
-    ws_ga.cell(6, 1, "Main HBB Span (W/m)").font = FONT_CALC_BOLD; ws_ga.cell(6, 1).fill = FILL_HERO; ws_ga.cell(6, 1).border = BORDER_CELL
+    ws_ga.row_dimensions[4].height = 22
+    ws_ga.merge_cells("A4:I4")
+    c_ga_bar = ws_ga.cell(
+        4, 1,
+        "=\"OVERALL DIMENSIONS: \"&TEXT(SUM('03_Feeder_Schedule'!C6:C13),\"#,##0\")&\" W × \"&'02_Board_&_Busbars'!B18&\" H × \"&'02_Board_&_Busbars'!B19&\" D mm   |   HBB POSITION: \"&UPPER('02_Board_&_Busbars'!B21)&\" (\"&'02_Board_&_Busbars'!B20&\" mm)   |   SCENARIO: \"&'01_Summary'!C9"
+    )
+    c_ga_bar.font = FONT_SECTION; c_ga_bar.fill = FILL_SECTION; c_ga_bar.alignment = ALIGN_C
+    for cc in range(1, 10): ws_ga.cell(4, cc).border = BORDER_CELL
+
+    ws_ga.cell(5, 1, "ELEVATION ZONE").font = FONT_HEADER; ws_ga.cell(5, 1).fill = FILL_HEADER; ws_ga.cell(5, 1).alignment = ALIGN_C; ws_ga.cell(5, 1).border = BORDER_CELL
+    ws_ga.row_dimensions[5].height = 24; ws_ga.row_dimensions[6].height = 20; ws_ga.row_dimensions[7].height = 26
+    ws_ga.cell(6, 1, "Cubicle Width (mm)").font = FONT_CALC_BOLD; ws_ga.cell(6, 1).fill = FILL_ZEBRA; ws_ga.cell(6, 1).border = BORDER_CELL
+    ws_ga.cell(7, 1, "Top HBB Chamber (W/m)").font = FONT_CALC_BOLD; ws_ga.cell(7, 1).fill = FILL_HERO; ws_ga.cell(7, 1).border = BORDER_CELL
+
+    border_cab = Border(
+        top=Side(style="medium", color=NAVY_DARK),
+        bottom=Side(style="medium", color=NAVY_DARK),
+        left=Side(style="medium", color=NAVY_DARK),
+        right=Side(style="medium", color=NAVY_DARK),
+    )
 
     for ci in range(8):
         col_num = 2 + ci; cr = COL_START + ci
-        c_hdr = ws_ga.cell(4, col_num, f"=IF('03_Feeder_Schedule'!B{cr}<>\"\",'03_Feeder_Schedule'!B{cr},'03_Feeder_Schedule'!A{cr}&\" (Unused)\")")
-        c_hdr.font = FONT_HEADER; c_hdr.fill = FILL_SECTION; c_hdr.alignment = ALIGN_C; c_hdr.border = BORDER_CELL
-        c_w = ws_ga.cell(5, col_num, f"='03_Feeder_Schedule'!C{cr}"); c_w.font = FONT_CALC_BOLD; c_w.fill = FILL_ZEBRA; c_w.alignment = ALIGN_C; c_w.border = BORDER_CELL; c_w.number_format = "#,##0\" mm\""
-        c_hb = ws_ga.cell(6, col_num, f"='04_Busbar_Segments'!H{HBB_START + ci}" if ci < 7 else 0)
-        c_hb.number_format = "0.0\" W/m\"" if ci < 7 else "\"End\""; c_hb.font = FONT_CALC_BOLD; c_hb.alignment = ALIGN_C; c_hb.border = BORDER_CELL
-
-    key_rng = f"'03_Feeder_Schedule'!$AH${FEED_START}:$AH${FEED_END}"
-    tag_rng = f"'03_Feeder_Schedule'!$C${FEED_START}:$C${FEED_END}"
-    iop_rng = f"'03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END}"
-    el_rng  = f"'03_Feeder_Schedule'!$R${FEED_START}:$R${FEED_END}"
-    w_rng   = f"'03_Feeder_Schedule'!$Y${FEED_START}:$Y${FEED_END}"
+        c_hdr = ws_ga.cell(5, col_num, f"=IF('03_Feeder_Schedule'!B{cr}<>\"\",'03_Feeder_Schedule'!B{cr},'03_Feeder_Schedule'!A{cr}&\" (Unused)\")")
+        c_hdr.font = FONT_HEADER; c_hdr.fill = FILL_SECTION; c_hdr.alignment = ALIGN_C; c_hdr.border = border_cab
+        c_w = ws_ga.cell(6, col_num, f"='03_Feeder_Schedule'!C{cr}"); c_w.font = FONT_CALC_BOLD; c_w.fill = FILL_ZEBRA; c_w.alignment = ALIGN_C; c_w.border = BORDER_CELL; c_w.number_format = "#,##0\" mm\""
+        c_hb = ws_ga.cell(7, col_num, f"='04_Busbar_Segments'!H{HBB_START + ci}" if ci < 7 else 0)
+        c_hb.number_format = "0.0\" W/m\"" if ci < 7 else "\"End\""; c_hb.font = FONT_CALC_BOLD; c_hb.alignment = ALIGN_C; c_hb.border = border_bus
 
     for tier_n in range(1, 9):
-        r_lbl = 7 + (tier_n - 1) * 2; r_val = r_lbl + 1
-        ws_ga.row_dimensions[r_lbl].height = 30; ws_ga.row_dimensions[r_val].height = 19
-        ws_ga.cell(r_lbl, 1, f"Tier {tier_n}\n(Tag & Load)").font = FONT_CALC_BOLD; ws_ga.cell(r_lbl, 1).fill = FILL_ZEBRA; ws_ga.cell(r_lbl, 1).alignment = ALIGN_C; ws_ga.cell(r_lbl, 1).border = BORDER_CELL
+        r_lbl = 8 + (tier_n - 1) * 2; r_val = r_lbl + 1
+        ws_ga.row_dimensions[r_lbl].height = 38; ws_ga.row_dimensions[r_val].height = 19
+        ws_ga.cell(r_lbl, 1, f"Tier {tier_n}\n(Compartment\nDoor & EL)").font = FONT_CALC_BOLD; ws_ga.cell(r_lbl, 1).fill = FILL_ZEBRA; ws_ga.cell(r_lbl, 1).alignment = ALIGN_C; ws_ga.cell(r_lbl, 1).border = BORDER_CELL
         ws_ga.cell(r_val, 1, f"Tier {tier_n} Heat (W)").font = FONT_HINT; ws_ga.cell(r_val, 1).fill = FILL_WHITE; ws_ga.cell(r_val, 1).alignment = ALIGN_C; ws_ga.cell(r_val, 1).border = BORDER_CELL
         for ci in range(8):
             col_num = 2 + ci; key_str = f"\"COL-0{ci+1}|{tier_n}\""
-            c_box = ws_ga.cell(r_lbl, col_num,
-                f"=IFERROR(INDEX({tag_rng},MATCH({key_str},{key_rng},0))&CHAR(10)&TEXT(INDEX({iop_rng},MATCH({key_str},{key_rng},0)),\"0\")&\" A  |  EL+\"&TEXT(INDEX({el_rng},MATCH({key_str},{key_rng},0)),\"0\"),\"—\")"
+            c_box = ws_ga.cell(
+                r_lbl, col_num,
+                f"=IFERROR(INDEX({tag_rng},MATCH({key_str},{key_rng},0))&\"  [\"&LEFT(INDEX({role_rng},MATCH({key_str},{key_rng},0)),6)&\"]\"&CHAR(10)&"
+                f"TEXT(INDEX({ht_rng},MATCH({key_str},{key_rng},0)),\"0\")&\"mm · EL+\"&TEXT(INDEX({el_rng},MATCH({key_str},{key_rng},0)),\"0\")&CHAR(10)&"
+                f"TEXT(INDEX({iop_rng},MATCH({key_str},{key_rng},0)),\"#,##0\")&\" A  (\" & INDEX({stat_rng},MATCH({key_str},{key_rng},0)) & \")\",\"—\")"
             )
-            c_box.font = FONT_CALC_BOLD; c_box.fill = FILL_ZEBRA; c_box.alignment = ALIGN_C; c_box.border = BORDER_CELL
+            c_box.font = FONT_CALC_BOLD; c_box.fill = FILL_ZEBRA; c_box.alignment = ALIGN_C; c_box.border = border_cab
             c_w = ws_ga.cell(r_val, col_num, f"=IFERROR(INDEX({w_rng},MATCH({key_str},{key_rng},0)),0)")
             c_w.font = FONT_CALC_BOLD; c_w.alignment = ALIGN_C; c_w.border = BORDER_CELL; c_w.number_format = "#,##0.0\" W\";;\"-\""
+
+    # Base Plinth Row (Row 24)
+    ws_ga.row_dimensions[24].height = 18
+    ws_ga.cell(24, 1, "BASE PLINTH (100 mm)").font = FONT_HEADER; ws_ga.cell(24, 1).fill = FILL_HEADER; ws_ga.cell(24, 1).alignment = ALIGN_C; ws_ga.cell(24, 1).border = BORDER_CELL
+    for ci in range(8):
+        cp = ws_ga.cell(24, 2 + ci, f"=IF('03_Feeder_Schedule'!C{COL_START+ci}>0,\"FFL +0 mm  |  \"&'03_Feeder_Schedule'!C{COL_START+ci}&\" mm\",\"\")")
+        cp.font = Font(name=FONT_FAMILY, size=8.5, bold=True, color="FFFFFF"); cp.fill = PatternFill("solid", fgColor="334155"); cp.alignment = ALIGN_C; cp.border = BORDER_CELL
 
     for offset, (lbl_txt, src_col, nf) in enumerate([
         ("Col Net Load / Supply (A)", "G", "#,##0.0\" A\""),
         ("Col Vertical Busbar (W)", "K", "#,##0.0\" W\""),
         ("COLUMN TOTAL HEAT (W)", "L", "#,##0.0\" W\""),
     ]):
-        rr = 23 + offset; ws_ga.row_dimensions[rr].height = 22
+        rr = 25 + offset; ws_ga.row_dimensions[rr].height = 22
         ws_ga.cell(rr, 1, lbl_txt).font = FONT_TOTAL if offset == 2 else FONT_CALC_BOLD
         ws_ga.cell(rr, 1).fill = FILL_TOTAL if offset == 2 else FILL_ZEBRA; ws_ga.cell(rr, 1).border = BORDER_TOTAL if offset == 2 else BORDER_CELL
         for ci in range(8):
@@ -1128,14 +1438,29 @@ def generate_workbook():
             formula = f"=MAX('03_Feeder_Schedule'!G{cr}+'03_Feeder_Schedule'!H{cr},'03_Feeder_Schedule'!I{cr})" if offset == 0 else f"='03_Feeder_Schedule'!{src_col}{cr}"
             c = ws_ga.cell(rr, col_num, formula); c.font = FONT_TOTAL if offset == 2 else FONT_CALC; c.fill = FILL_HERO if offset == 2 else FILL_WHITE; c.alignment = ALIGN_C; c.border = BORDER_TOTAL if offset == 2 else BORDER_CELL; c.number_format = nf
 
-    heat_rule = ColorScaleRule(start_type="num", start_value=0, start_color="E0F2FE", mid_type="num", mid_value=150, mid_color="FEF08A", end_type="num", end_value=800, end_color="FCA5A5")
-    ws_ga.conditional_formatting.add("B6:H6", heat_rule)
+    # Heat Map Colour Legend on Row 29
+    ws_ga.row_dimensions[29].height = 20
+    ws_ga.cell(29, 1, "HEAT MAP LEGEND:").font = FONT_CALC_BOLD; ws_ga.cell(29, 1).alignment = ALIGN_C
+    for idx_lg, (lg_txt, lg_bg) in enumerate([
+        ("0 W (Idle / Spare)", "E0F2FE"),
+        ("Low (< 50 W)", "DCFCE7"),
+        ("Moderate (50–180 W)", "FEF08A"),
+        ("High (180–500 W)", "FDBA74"),
+        ("Hotspot (> 500 W)", "FCA5A5"),
+    ]):
+        clg = ws_ga.cell(29, 2 + idx_lg, lg_txt)
+        clg.font = FONT_CALC_BOLD; clg.fill = PatternFill("solid", fgColor=lg_bg); clg.alignment = ALIGN_C; clg.border = BORDER_CELL
+
+    ws_ga.conditional_formatting.add("B7:H7", heat_hbb_rule)
     for tier_n in range(1, 9):
-        ws_ga.conditional_formatting.add(f"B{8 + (tier_n - 1) * 2}:I{8 + (tier_n - 1) * 2}", heat_rule)
+        ws_ga.conditional_formatting.add(f"B{9 + (tier_n - 1) * 2}:I{9 + (tier_n - 1) * 2}", heat_comp_rule)
+    ws_ga.conditional_formatting.add("B26:I26", heat_comp_rule)
+    ws_ga.conditional_formatting.add("B27:I27", heat_col_rule)
+
     ws_ga.column_dimensions["A"].width = 22
-    for ci in range(8): ws_ga.column_dimensions[get_column_letter(2 + ci)].width = 21
+    for ci in range(8): ws_ga.column_dimensions[get_column_letter(2 + ci)].width = 22
     ws_ga.column_dimensions["J"].width = 4
-    ws_ga.freeze_panes = "B7"
+    ws_ga.freeze_panes = "B8"
     configure_print(ws_ga, landscape=True, fit_width=1, fit_height=1)
 
     # =========================================================================
@@ -1486,15 +1811,22 @@ def generate_workbook():
     # =========================================================================
     for ws_inp in [ws_smp, ws_sum, ws_bus, ws_fed, ws_lib, ws_rm, ws_help]:
         apply_sheet_protection(ws_inp, strict_calc_sheet=False)
-    # Strict protection (hidden formulas + unselectable/uncopyable locked cells) on Calculation Engine & GA!
+    # Strict protection (hidden formulas + unselectable/uncopyable locked cells) on Calculation Engine & Live SLD/GA!
     apply_sheet_protection(ws_seg, strict_calc_sheet=True)
+    apply_sheet_protection(ws_sld, strict_calc_sheet=True)
     apply_sheet_protection(ws_ga, strict_calc_sheet=True)
 
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    wb.save(OUTPUT_PATH)
-    print(f"SUCCESS: Generated macro-free protected Excel workbook at: {OUTPUT_PATH}")
+    final_path = OUTPUT_PATH
+    try:
+        wb.save(final_path)
+    except PermissionError:
+        final_path = OUTPUT_PATH.replace(".xlsx", "_v2.7.xlsx")
+        wb.save(final_path)
+        print(f"NOTE: Original file is open in Excel; saved updated workbook to: {final_path}")
+    print(f"SUCCESS: Generated macro-free protected Excel workbook at: {final_path}")
     print(f"Sheets ({len(wb.sheetnames)}): {wb.sheetnames}")
-    print(f"Protection enabled on all sheets (Strict hidden+uncopyable on 04_Busbar_Segments & 05_GA_Heat_Map; password: {PROTECT_PASSWORD})")
+    print(f"Protection enabled on all sheets (Strict hidden+uncopyable on 04_Busbar_Segments, 05a_Live_SLD_HeatMap & 05b_Live_GA_HeatMap; password: {PROTECT_PASSWORD})")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 {
-  "version": "2.6.0",
-  "updated": "2026-11-27"
+  "version": "2.7.1",
+  "released": "2026-11-27",
+  "notes": "Updated 1250A busbar preset to 2 x 75 x 6 mm Cu (900 mm2/phase) per BS EN 60439-1 Type 439 enclosed rating across both Web App and Excel."
 }

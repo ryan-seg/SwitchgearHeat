@@ -26,6 +26,10 @@ window.SGState = (function () {
         description: cloned.name,
         role: cloned.role || 'feeder',
         category: cloned.category,
+        manufacturer: cloned.manufacturer || 'Generic IEC',
+        modelSeries: cloned.modelSeries || '',
+        sourceRef: cloned.sourceRef || '',
+        sourceUrl: cloned.sourceUrl || '',
         status: 'active', // 'active' | 'future' | 'standby'
         heightMm: cloned.defaultHeightMm || 250,
         ratedCurrentA: cloned.ratedCurrentA,
@@ -98,8 +102,8 @@ window.SGState = (function () {
       },
       mainBusbar: {
         label: 'Main Horizontal Busbar',
-        ratedCurrentA: 1600,
-        certRef: 'BS EN 60439-1 Type 439 Cert — 2×75×6mm',
+        ratedCurrentA: 1250,
+        certRef: 'BS EN 60439-1 Type 439 Cert — 2×75×6mm (1250A)',
         material: 'cu_100',
         barsPerPhase: 2,
         widthMm: 75,
@@ -596,7 +600,7 @@ window.SGState = (function () {
 
   function createDefaultSimpleMode() {
     return {
-      busbarPresetId: 'bb-1600',
+      busbarPresetId: 'bb-1250',
       material: 'cu_100',
       busbarTempC: 70,
       manualSFactor: 1.2,
@@ -668,7 +672,12 @@ window.SGState = (function () {
 
     // 2. Build Columns from Simple Mode Topology & Circuit Counts
     const cols = [];
-    const incTplId = bbPreset.ratedCurrentA >= 2500 ? 'acb-2500' : 'acb-1600';
+    const incTplId =
+      bbPreset.ratedCurrentA >= 3200 ? 'acb-3200' :
+      bbPreset.ratedCurrentA >= 2500 ? 'acb-2500' :
+      bbPreset.ratedCurrentA >= 2000 ? 'acb-2000' :
+      bbPreset.ratedCurrentA >= 1600 ? 'acb-1600' :
+      bbPreset.ratedCurrentA >= 1250 ? 'acb-1250' : 'acb-1000';
     const loadFactor = Math.min(1, Math.max(0.1, Number(sm.avgLoadPct || 75) / 100));
 
     // COL-01: Main Incomer A
@@ -998,12 +1007,25 @@ window.SGState = (function () {
       const existing = byId.get(tpl.id);
       if (!existing) {
         deviceLibrary.push(window.SGCatalog.cloneTemplate(tpl));
-      } else if ((tpl.id === 'fuse-250' || tpl.id === 'fuse-400') && existing.category === 'Fuse-Switch') {
+      } else {
         // Upgrade legacy generic fuse templates to Eaton Bussmann NH gG specs
-        Object.assign(existing, window.SGCatalog.cloneTemplate(tpl));
+        if ((tpl.id === 'fuse-250' || tpl.id === 'fuse-400') && existing.category === 'Fuse-Switch') {
+          Object.assign(existing, window.SGCatalog.cloneTemplate(tpl));
+        } else {
+          // Backfill structured sorting & datasheet evidence metadata on older saved libraries
+          if (!existing.manufacturer) existing.manufacturer = tpl.manufacturer || 'Generic IEC';
+          if (!existing.modelSeries) existing.modelSeries = tpl.modelSeries || '';
+          if (existing.sizeValue == null && tpl.sizeValue != null) existing.sizeValue = tpl.sizeValue;
+          if (!existing.sizeLabel && tpl.sizeLabel) existing.sizeLabel = tpl.sizeLabel;
+          if (!existing.sourceRef && tpl.sourceRef) existing.sourceRef = tpl.sourceRef;
+          if (existing.sourceUrl === undefined && tpl.sourceUrl) existing.sourceUrl = tpl.sourceUrl;
+          if (tpl.category === 'Spare / Placeholder' && (existing.category === 'Spare Space' || existing.category === 'Placeholder' || existing.category === 'Chamber / Aux')) {
+            existing.category = tpl.category;
+          }
+        }
       }
     });
-    return deviceLibrary;
+    return window.SGCatalog.sortDeviceLibrary(deviceLibrary);
   }
 
   function loadProject() {

@@ -431,7 +431,7 @@ window.SGSLD = (function () {
         `);
       });
 
-      // Quick Add Buttons at Bottom of Every Column (Feeder + Spare Space)
+      // Quick Add Buttons at Bottom of Every Column (Feeder + Spare Space, or Interconnector Tier in Incomer Column)
       if (!cr.hasIncomer && !cr.hasCoupler) {
         const addBtnY = belowTiers.length > 0 ? lastTierY + 46 : busY + 46;
         parts.push(`
@@ -442,6 +442,14 @@ window.SGSLD = (function () {
           <g class="clickable" data-action="add-spare" data-col-index="${colIdx}">
             <rect x="${cx + 4}" y="${addBtnY}" width="94" height="24" rx="5" fill="#1e293b" stroke="#475569" stroke-dasharray="3 2" />
             <text x="${cx + 51}" y="${addBtnY + 15.5}" text-anchor="middle" fill="#cbd5e1" font-size="9.8" font-weight="600">+ Spare Bay</text>
+          </g>
+        `);
+      } else if (cr.hasIncomer) {
+        const addBtnY = belowTiers.length > 0 ? lastTierY + 46 : busY + 46;
+        parts.push(`
+          <g class="clickable" data-action="add-interconn-tier" data-col-index="${colIdx}" title="Place an Interconnector (e.g. 1250A ACB) in a tier in this Incomer column">
+            <rect x="${cx - 98}" y="${addBtnY}" width="196" height="24" rx="5" fill="#1e293b" stroke="#f97316" stroke-dasharray="3 2" />
+            <text x="${cx}" y="${addBtnY + 15.5}" text-anchor="middle" fill="#fb923c" font-size="9.5" font-weight="600">+ Interconnector Tier (1250A)</text>
           </g>
         `);
       }

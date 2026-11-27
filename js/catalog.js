@@ -1,11 +1,21 @@
 /**
- * Generic IEC 60439 / 61439 Protective Device, Starter & Busbar Standard Library
+ * Generic IEC 60439 / 61439 Protective Device, Starter, Eaton HRC Fuse & Busbar Standard Library
  * Representative manufacturer power dissipation values at rated current In (3-pole, 400V 50Hz).
- * All entries are fully editable and extensible by the engineer.
+ * Sorted strictly by: Type (category) -> Manufacturer -> Model / Series -> Size (numeric rating).
+ * Every device includes optional sourceRef & sourceUrl evidence links; all entries are editable.
  */
 
 window.SGCatalog = (function () {
   'use strict';
+
+  const SOURCE_URLS = {
+    eatonNH: 'https://www.eaton.com/content/dam/eaton/products/electrical-circuit-protection/fuses/data-sheets/bus-ele-ds-10164-nh-fuse-links-500vac.pdf',
+    iec60947_2: 'https://webstore.iec.ch/en/publication/59761',
+    iec60898_1: 'https://webstore.iec.ch/en/publication/59854',
+    iec60947_4_1: 'https://webstore.iec.ch/en/publication/60559',
+    iec61800_9: 'https://webstore.iec.ch/en/publication/29909',
+    iec61439_1: 'https://webstore.iec.ch/en/publication/62019',
+  };
 
   const BUSBAR_PRESETS = [
     {
@@ -45,16 +55,28 @@ window.SGCatalog = (function () {
       certRef: 'IEC 60439-1 / 61439-1 Type Tested 1000A',
     },
     {
-      id: 'bb-1600',
-      name: '1600 A — 2 × 75 × 6 mm Cu (900 mm²)',
-      ratedCurrentA: 1600,
+      id: 'bb-1250',
+      name: '1250 A — 2 × 75 × 6 mm Cu (900 mm²)',
+      ratedCurrentA: 1250,
       material: 'cu_100',
       barsPerPhase: 2,
       widthMm: 75,
       thicknessMm: 6,
       gapMm: 6,
       phaseSpacingMm: 120,
-      certRef: 'BS EN 60439-1 Type 439 Cert — 2×75×6mm',
+      certRef: 'BS EN 60439-1 Type 439 Cert — 2×75×6mm (1250A)',
+    },
+    {
+      id: 'bb-1600',
+      name: '1600 A — 2 × 80 × 8 mm Cu (1280 mm²)',
+      ratedCurrentA: 1600,
+      material: 'cu_100',
+      barsPerPhase: 2,
+      widthMm: 80,
+      thicknessMm: 8,
+      gapMm: 8,
+      phaseSpacingMm: 125,
+      certRef: 'IEC 61439-1 Type Tested 1600A — 2×80×8mm',
     },
     {
       id: 'bb-2000',
@@ -130,163 +152,269 @@ window.SGCatalog = (function () {
     },
     {
       id: 'bb-v1250',
-      name: '1250 A Vertical — 2 × 50 × 6 mm Cu (600 mm²)',
+      name: '1250 A Vertical — 2 × 75 × 6 mm Cu (900 mm²)',
       ratedCurrentA: 1250,
       material: 'cu_100',
       barsPerPhase: 2,
-      widthMm: 50,
+      widthMm: 75,
       thicknessMm: 6,
       gapMm: 6,
-      phaseSpacingMm: 105,
-      certRef: 'Vertical Dropper 1250A',
+      phaseSpacingMm: 120,
+      certRef: 'Vertical Dropper 1250A — 2×75×6mm (900mm²)',
+    },
+    {
+      id: 'bb-v1600',
+      name: '1600 A Vertical — 2 × 80 × 8 mm Cu (1280 mm²)',
+      ratedCurrentA: 1600,
+      material: 'cu_100',
+      barsPerPhase: 2,
+      widthMm: 80,
+      thicknessMm: 8,
+      gapMm: 8,
+      phaseSpacingMm: 125,
+      certRef: 'Vertical Dropper 1600A — 2×80×8mm',
     },
   ];
 
-  const DEFAULT_DEVICE_TEMPLATES = [
-    // --- ACBs ---
-    {
-      id: 'acb-800',
+  // --- Helper builders for clean, consistent structured library items ---
+  function makeAcb(id, role, modelSeries, labelPrefix, amps, pn, pfix, h, notes) {
+    return {
+      id,
       category: 'ACB',
-      name: 'ACB 800A Drawout (3P/4P)',
-      role: 'incomer',
-      ratedCurrentA: 800,
-      ratedLossW: 110,
-      fixedLossW: 12,
-      defaultHeightMm: 700,
-      notes: 'Representative IEC 60947-2 drawout ACB with electronic trip unit',
+      manufacturer: 'Generic IEC',
+      modelSeries,
+      sizeValue: amps,
+      sizeLabel: `${amps} A`,
+      name: `${labelPrefix} ${amps}A Drawout (3P/4P)`,
+      role,
+      ratedCurrentA: amps,
+      ratedLossW: pn,
+      fixedLossW: pfix,
+      defaultHeightMm: h,
+      notes,
+      sourceRef: 'IEC 60947-2 / Representative Drawout ACB Catalogues (Emax / MasterPact / 3WA / IZMX)',
+      sourceUrl: SOURCE_URLS.iec60947_2,
       subComponents: [
-        { name: 'ACB Main Poles & Cradle Contacts', ratedCurrentA: 800, ratedLossW: 110, fixedLossW: 0 },
-        { name: 'Electronic Trip Unit & Metering', ratedCurrentA: 800, ratedLossW: 0, fixedLossW: 12 },
+        { name: `${labelPrefix} Main Poles & Cradle Contacts (${amps}A)`, ratedCurrentA: amps, ratedLossW: pn, fixedLossW: 0 },
+        { name: 'Electronic Trip Unit, Interlocks & Auxiliaries', ratedCurrentA: amps, ratedLossW: 0, fixedLossW: pfix },
       ],
-    },
-    {
-      id: 'acb-1600',
-      category: 'ACB',
-      name: 'ACB 1600A Drawout (3P/4P)',
-      role: 'incomer',
-      ratedCurrentA: 1600,
-      ratedLossW: 260,
-      fixedLossW: 15,
-      defaultHeightMm: 750,
-      notes: 'Representative 1600A drawout ACB (e.g., MasterPact / Emax / 3WA)',
-      subComponents: [
-        { name: 'ACB Main Poles & Cradle Contacts', ratedCurrentA: 1600, ratedLossW: 260, fixedLossW: 0 },
-        { name: 'Electronic Trip Unit & Auxiliaries', ratedCurrentA: 1600, ratedLossW: 0, fixedLossW: 15 },
-      ],
-    },
-    {
-      id: 'acb-2500',
-      category: 'ACB',
-      name: 'ACB 2500A Drawout (3P/4P)',
-      role: 'incomer',
-      ratedCurrentA: 2500,
-      ratedLossW: 480,
-      fixedLossW: 18,
-      defaultHeightMm: 800,
-      notes: 'Representative 2500A drawout ACB',
-      subComponents: [
-        { name: 'ACB Main Poles & Cradle Contacts', ratedCurrentA: 2500, ratedLossW: 480, fixedLossW: 0 },
-        { name: 'Electronic Trip Unit & Auxiliaries', ratedCurrentA: 2500, ratedLossW: 0, fixedLossW: 18 },
-      ],
-    },
-    {
-      id: 'acb-3200',
-      category: 'ACB',
-      name: 'ACB 3200A Drawout (3P/4P)',
-      role: 'incomer',
-      ratedCurrentA: 3200,
-      ratedLossW: 680,
-      fixedLossW: 20,
-      defaultHeightMm: 900,
-      notes: 'Representative 3200A drawout ACB',
-      subComponents: [
-        { name: 'ACB Main Poles & Cradle Contacts', ratedCurrentA: 3200, ratedLossW: 680, fixedLossW: 0 },
-        { name: 'Electronic Trip Unit & Auxiliaries', ratedCurrentA: 3200, ratedLossW: 0, fixedLossW: 20 },
-      ],
-    },
+    };
+  }
 
-    // --- MCCBs ---
-    {
-      id: 'mccb-100',
+  function makeMccb(id, amps, modelSeries, pn, pfix, h, notes) {
+    return {
+      id,
       category: 'MCCB',
-      name: 'MCCB 100A (3P Thermal-Mag)',
+      manufacturer: 'Generic IEC',
+      modelSeries,
+      sizeValue: amps,
+      sizeLabel: `${amps} A`,
+      name: `MCCB ${amps}A (${modelSeries})`,
       role: 'feeder',
-      ratedCurrentA: 100,
-      ratedLossW: 24,
-      fixedLossW: 0,
-      defaultHeightMm: 200,
-      notes: 'Generic 100A frame MCCB (~8W/pole at In)',
-    },
-    {
-      id: 'mccb-160',
-      category: 'MCCB',
-      name: 'MCCB 160A (3P Electronic)',
-      role: 'feeder',
-      ratedCurrentA: 160,
-      ratedLossW: 30,
-      fixedLossW: 2,
-      defaultHeightMm: 200,
-      notes: 'Generic 160A frame MCCB (~10W/pole at In)',
-    },
-    {
-      id: 'mccb-250',
-      category: 'MCCB',
-      name: 'MCCB 250A (3P Electronic)',
-      role: 'feeder',
-      ratedCurrentA: 250,
-      ratedLossW: 42,
-      fixedLossW: 2,
-      defaultHeightMm: 250,
-      notes: 'Generic 250A frame MCCB (~14W/pole at In)',
-    },
-    {
-      id: 'mccb-400',
-      category: 'MCCB',
-      name: 'MCCB 400A (3P Electronic)',
-      role: 'feeder',
-      ratedCurrentA: 400,
-      ratedLossW: 66,
-      fixedLossW: 3,
-      defaultHeightMm: 300,
-      notes: 'Generic 400A frame MCCB (~22W/pole at In)',
-    },
-    {
-      id: 'mccb-630',
-      category: 'MCCB',
-      name: 'MCCB 630A (3P Electronic)',
-      role: 'feeder',
-      ratedCurrentA: 630,
-      ratedLossW: 114,
-      fixedLossW: 4,
-      defaultHeightMm: 400,
-      notes: 'Generic 630A frame MCCB (~38W/pole at In)',
-    },
-    {
-      id: 'mccb-800',
-      category: 'MCCB',
-      name: 'MCCB 800A (3P Electronic)',
-      role: 'feeder',
-      ratedCurrentA: 800,
-      ratedLossW: 165,
-      fixedLossW: 5,
-      defaultHeightMm: 450,
-      notes: 'Generic 800A frame MCCB (~55W/pole at In)',
-    },
+      ratedCurrentA: amps,
+      ratedLossW: pn,
+      fixedLossW: pfix,
+      defaultHeightMm: h,
+      notes,
+      sourceRef: 'IEC 60947-2 / IEC TR 60890 Typical 3-Pole MCCB Losses',
+      sourceUrl: SOURCE_URLS.iec60947_2,
+    };
+  }
 
-    // --- MCB ---
-    {
-      id: 'mcb-63',
+  function makeMcb(id, amps, pn, h) {
+    return {
+      id,
       category: 'MCB',
-      name: 'MCB 63A 3P (Miniature Circuit Breaker)',
+      manufacturer: 'Generic IEC',
+      modelSeries: 'IEC 60898-1 3P',
+      sizeValue: amps,
+      sizeLabel: `${amps} A`,
+      name: `MCB ${amps}A 3P (Miniature Circuit Breaker)`,
       role: 'feeder',
-      ratedCurrentA: 63,
-      ratedLossW: 16,
+      ratedCurrentA: amps,
+      ratedLossW: pn,
       fixedLossW: 0,
-      defaultHeightMm: 150,
-      notes: 'Generic 63A 3-Pole Miniature Circuit Breaker (~5.3W/pole)',
-    },
+      defaultHeightMm: h,
+      notes: `Generic ${amps}A 3-Pole Miniature Circuit Breaker (~${(pn / 3).toFixed(1)}W/pole at In)`,
+      sourceRef: 'IEC 60898-1 Table 6 / IEC TR 60890 Typical 3P MCB Losses',
+      sourceUrl: SOURCE_URLS.iec60898_1,
+    };
+  }
 
-    // --- Eaton Bussmann NH gG HRC Fuse Links (Complete 2A to 1250A series, Data Sheet 10164, 500V AC) ---
+  function makeDol(id, kw, frameA, mpcbW, contW, coilW, olW, auxW, h) {
+    const totalVar = Math.round((mpcbW + contW + olW) * 10) / 10;
+    const totalFix = Math.round((coilW + auxW) * 10) / 10;
+    return {
+      id,
+      category: 'DOL Starter',
+      manufacturer: 'Generic IEC',
+      modelSeries: 'IEC 60947-4-1 AC-3 DOL',
+      sizeValue: kw,
+      sizeLabel: `${kw} kW (${frameA}A)`,
+      name: `DOL Starter ${kw} kW (${frameA}A frame)`,
+      role: 'feeder',
+      ratedCurrentA: frameA,
+      ratedLossW: totalVar,
+      fixedLossW: totalFix,
+      defaultKw: kw,
+      defaultHeightMm: h,
+      notes: `Direct-On-Line ${kw} kW motor starter: MPCB/MCCB + AC-3 Contactor + Overload + Control Aux`,
+      sourceRef: 'IEC 60947-4-1 / IEC TR 60890 Motor Starter Assembly Dissipation',
+      sourceUrl: SOURCE_URLS.iec60947_4_1,
+      subComponents: [
+        { name: `MPCB / MCCB Isolator (${frameA}A)`, ratedCurrentA: frameA, ratedLossW: mpcbW, fixedLossW: 0 },
+        { name: `Main AC-3 Contactor (${frameA}A Poles + Coil)`, ratedCurrentA: frameA, ratedLossW: contW, fixedLossW: coilW },
+        { name: 'Thermal / Electronic Overload Relay', ratedCurrentA: frameA, ratedLossW: olW, fixedLossW: 0 },
+        { name: 'Control Circuit / Pilot Lamps / Aux', ratedCurrentA: frameA, ratedLossW: 0, fixedLossW: auxW },
+      ],
+    };
+  }
+
+  function makeStarDelta(id, kw, frameA, mccbW, contW, coilsW, olW, auxW, h) {
+    const totalVar = Math.round((mccbW + contW + olW) * 10) / 10;
+    const totalFix = Math.round((coilsW + auxW) * 10) / 10;
+    return {
+      id,
+      category: 'Star-Delta Starter',
+      manufacturer: 'Generic IEC',
+      modelSeries: 'IEC 60947-4-1 Star-Delta',
+      sizeValue: kw,
+      sizeLabel: `${kw} kW (${frameA}A)`,
+      name: `Star-Delta Starter ${kw} kW (${frameA}A frame)`,
+      role: 'feeder',
+      ratedCurrentA: frameA,
+      ratedLossW: totalVar,
+      fixedLossW: totalFix,
+      defaultKw: kw,
+      defaultHeightMm: h,
+      notes: `Star-Delta ${kw} kW: MCCB + Main & Delta Contactors in steady run (58% current each) + Overload + Timer`,
+      sourceRef: 'IEC 60947-4-1 / IEC TR 60890 Star-Delta Run-Mode Losses',
+      sourceUrl: SOURCE_URLS.iec60947_4_1,
+      subComponents: [
+        { name: `MCCB Isolator (${frameA}A)`, ratedCurrentA: frameA, ratedLossW: mccbW, fixedLossW: 0 },
+        { name: 'Main + Delta Contactors (Run Mode, 2 Coils)', ratedCurrentA: frameA, ratedLossW: contW, fixedLossW: coilsW },
+        { name: 'Overload Relay (Phase-Leg)', ratedCurrentA: frameA, ratedLossW: olW, fixedLossW: 0 },
+        { name: 'Control Circuit & Star-Delta Timer', ratedCurrentA: frameA, ratedLossW: 0, fixedLossW: auxW },
+      ],
+    };
+  }
+
+  function makeSoftStarter(id, kw, frameA, mccbW, bypassW, elecW, h, nonBypassed) {
+    const modelSeries = nonBypassed ? 'IEC 60947-4-2 Non-Bypassed SCR' : 'IEC 60947-4-2 Bypassed Run';
+    const suffix = nonBypassed ? 'Non-Bypassed SCR' : 'Bypassed Run';
+    const totalVar = Math.round((mccbW + bypassW) * 10) / 10;
+    return {
+      id,
+      category: 'Soft Starter',
+      manufacturer: 'Generic IEC',
+      modelSeries,
+      sizeValue: kw,
+      sizeLabel: `${kw} kW (${frameA}A)`,
+      name: `Soft Starter ${kw} kW (${suffix}, ${frameA}A)`,
+      role: 'feeder',
+      ratedCurrentA: frameA,
+      ratedLossW: totalVar,
+      fixedLossW: elecW,
+      defaultKw: kw,
+      defaultHeightMm: h,
+      notes: nonBypassed
+        ? `Continuous SCR conduction (~3.5 W/A across 3 phases) + MCCB + cooling fan`
+        : `MCCB + Soft Starter with internal bypass contactor closed in steady-state run`,
+      sourceRef: 'IEC 60947-4-2 Semiconductor Motor Controller Thermal Data',
+      sourceUrl: SOURCE_URLS.iec60947_4_1,
+      subComponents: [
+        { name: `MCCB Isolator (${frameA}A)`, ratedCurrentA: frameA, ratedLossW: mccbW, fixedLossW: 0 },
+        {
+          name: nonBypassed ? 'Continuous SCR Thyristor Power Stage' : 'Soft Starter Internal Bypass Poles',
+          ratedCurrentA: frameA,
+          ratedLossW: bypassW,
+          fixedLossW: 0,
+          lossModel: nonBypassed ? 'vsd_efficiency' : 'bypassed_soft_starter',
+        },
+        { name: 'Soft Starter Control Electronics & Cooling Fan', ratedCurrentA: frameA, ratedLossW: 0, fixedLossW: elecW },
+      ],
+    };
+  }
+
+  function makeVsd(id, kw, frameA, pctLoss, mccbW, fanW, h) {
+    const totalPowerStageW = Math.round(kw * 1000 * (pctLoss / 100));
+    const totalVar = mccbW + totalPowerStageW;
+    return {
+      id,
+      category: 'VSD / Inverter',
+      manufacturer: 'Generic IEC',
+      modelSeries: 'IEC 61800-9-2 VSD (IE2)',
+      sizeValue: kw,
+      sizeLabel: `${kw} kW (${frameA}A)`,
+      name: `VSD / Inverter Drive ${kw} kW (${pctLoss.toFixed(1)}% loss)`,
+      role: 'feeder',
+      ratedCurrentA: frameA,
+      ratedLossW: totalVar,
+      fixedLossW: fanW,
+      defaultKw: kw,
+      defaultHeightMm: h,
+      notes: `High heat source! ${pctLoss.toFixed(1)}% of rated motor kW dissipated in rectifier/IGBT stage + input MCCB + cooling fans`,
+      sourceRef: 'IEC 61800-9-2 Reference Complete Drive Module (CDM) Losses',
+      sourceUrl: SOURCE_URLS.iec61800_9,
+      subComponents: [
+        { name: `Input MCCB / Fuse Isolator (${frameA}A)`, ratedCurrentA: frameA, ratedLossW: mccbW, fixedLossW: 0 },
+        { name: `VSD Rectifier & IGBT Power Stage (${pctLoss.toFixed(1)}%)`, ratedCurrentA: frameA, ratedLossW: totalPowerStageW, fixedLossW: 0, lossModel: 'vsd_efficiency' },
+        { name: 'VSD Control Board & Cooling Fans', ratedCurrentA: frameA, ratedLossW: 0, fixedLossW: fanW },
+      ],
+    };
+  }
+
+  const RAW_DEVICE_TEMPLATES = [
+    // =========================================================================
+    // 1. ACBs — Air Circuit Breakers (Incomers, Interconnectors & Bus Couplers)
+    //    Includes 800A, 1000A, 1250A, 1600A, 2000A, 2500A, 3200A, 4000A!
+    // =========================================================================
+    makeAcb('acb-800',  'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 800,  110, 12, 700, 'Representative 800A drawout Incomer ACB with electronic trip unit'),
+    makeAcb('acb-1000', 'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 1000, 145, 13, 720, 'Representative 1000A drawout Incomer ACB with electronic trip unit'),
+    makeAcb('acb-1250', 'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 1250, 195, 14, 740, 'Representative 1250A drawout Incomer ACB with electronic trip unit'),
+    makeAcb('acb-1600', 'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 1600, 260, 15, 750, 'Representative 1600A drawout Incomer ACB (e.g., MasterPact / Emax / 3WA)'),
+    makeAcb('acb-2000', 'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 2000, 360, 16, 780, 'Representative 2000A drawout Incomer ACB'),
+    makeAcb('acb-2500', 'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 2500, 480, 18, 800, 'Representative 2500A drawout Incomer ACB'),
+    makeAcb('acb-3200', 'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 3200, 680, 20, 900, 'Representative 3200A drawout Incomer ACB'),
+    makeAcb('acb-4000', 'incomer', 'IEC 60947-2 Incomer ACB', 'ACB Incomer', 4000, 880, 22, 950, 'Representative 4000A drawout Incomer ACB'),
+
+    makeAcb('interconn-800',  'interconnector', 'IEC 60947-2 Interconnector ACB', 'Interconnector ACB', 800,  110, 12, 700, 'Outgoing 800A Interconnector ACB supplying remote firm-supply board'),
+    makeAcb('interconn-1000', 'interconnector', 'IEC 60947-2 Interconnector ACB', 'Interconnector ACB', 1000, 145, 13, 720, 'Outgoing 1000A Interconnector ACB supplying remote firm-supply board'),
+    makeAcb('interconn-1250', 'interconnector', 'IEC 60947-2 Interconnector ACB', 'Interconnector ACB', 1250, 195, 14, 740, 'Outgoing 1250A Interconnector ACB supplying remote B-Side firm-supply board'),
+    makeAcb('interconn-1600', 'interconnector', 'IEC 60947-2 Interconnector ACB', 'Interconnector ACB', 1600, 260, 15, 750, 'Outgoing 1600A Interconnector ACB supplying remote B-Side firm-supply board'),
+    makeAcb('interconn-2000', 'interconnector', 'IEC 60947-2 Interconnector ACB', 'Interconnector ACB', 2000, 360, 16, 780, 'Outgoing 2000A Interconnector ACB supplying remote B-Side firm-supply board'),
+    makeAcb('interconn-2500', 'interconnector', 'IEC 60947-2 Interconnector ACB', 'Interconnector ACB', 2500, 480, 18, 800, 'Outgoing 2500A Interconnector ACB supplying remote B-Side firm-supply board'),
+    makeAcb('interconn-3200', 'interconnector', 'IEC 60947-2 Interconnector ACB', 'Interconnector ACB', 3200, 680, 20, 900, 'Outgoing 3200A Interconnector ACB supplying remote B-Side firm-supply board'),
+
+    makeAcb('coupler-800',  'bus_coupler', 'IEC 60947-2 Bus-Section Coupler ACB', 'Bus-Section Coupler ACB', 800,  100, 12, 700, '800A Bus-section coupler between Section A and Section B'),
+    makeAcb('coupler-1250', 'bus_coupler', 'IEC 60947-2 Bus-Section Coupler ACB', 'Bus-Section Coupler ACB', 1250, 180, 14, 740, '1250A Bus-section coupler between Section A and Section B'),
+    makeAcb('coupler-1600', 'bus_coupler', 'IEC 60947-2 Bus-Section Coupler ACB', 'Bus-Section Coupler ACB', 1600, 240, 15, 750, '1600A Bus-section coupler between Section A and Section B'),
+    makeAcb('coupler-2000', 'bus_coupler', 'IEC 60947-2 Bus-Section Coupler ACB', 'Bus-Section Coupler ACB', 2000, 330, 15, 780, '2000A Bus-section coupler between Section A and Section B'),
+    makeAcb('coupler-2500', 'bus_coupler', 'IEC 60947-2 Bus-Section Coupler ACB', 'Bus-Section Coupler ACB', 2500, 440, 15, 800, '2500A Bus-section coupler between Section A and Section B'),
+    makeAcb('coupler-3200', 'bus_coupler', 'IEC 60947-2 Bus-Section Coupler ACB', 'Bus-Section Coupler ACB', 3200, 630, 18, 900, '3200A Bus-section coupler between Section A and Section B'),
+
+    // =========================================================================
+    // 2. DOL Starters — Complete IEC 400V 3-Phase Series (0.75 kW – 55 kW)
+    // =========================================================================
+    makeDol('dol-0.75kw', 0.75, 4,   4.0,  1.2,  3.5,  2.5, 2.0, 180),
+    makeDol('dol-1.5kw',  1.5,  6,   4.5,  1.5,  3.5,  3.0, 2.0, 180),
+    makeDol('dol-2.2kw',  2.2,  9,   5.0,  2.0,  4.0,  3.5, 2.0, 180),
+    makeDol('dol-4kw',    4.0,  12,  5.5,  3.0,  4.5,  4.5, 2.5, 190),
+    makeDol('dol-5.5kw',  5.5,  16,  6.2,  4.0,  5.0,  5.2, 2.5, 190),
+    makeDol('dol-7.5kw',  7.5,  25,  7.0,  5.0,  6.0,  6.0, 3.0, 200),
+    makeDol('dol-11kw',   11.0, 32,  9.0,  7.0,  7.0,  6.5, 3.5, 210),
+    makeDol('dol-15kw',   15.0, 40,  11.0, 9.0,  8.0,  7.0, 4.0, 220),
+    makeDol('dol-18.5kw', 18.5, 50,  13.0, 11.0, 9.0,  7.5, 4.5, 240),
+    makeDol('dol-22kw',   22.0, 63,  15.0, 13.0, 10.0, 8.0, 5.0, 250),
+    makeDol('dol-30kw',   30.0, 80,  19.0, 17.0, 11.0, 9.0, 5.0, 280),
+    makeDol('dol-37kw',   37.0, 100, 24.0, 21.0, 12.0, 10.0, 6.0, 300),
+    makeDol('dol-45kw',   45.0, 125, 28.0, 27.0, 13.5, 11.0, 6.5, 320),
+    makeDol('dol-55kw',   55.0, 160, 32.0, 34.0, 15.0, 12.0, 7.0, 350),
+
+    // =========================================================================
+    // 3. HRC Fuse-Switches — Complete Eaton Bussmann NH gG Series (2A – 1250A)
+    //    Source: Eaton Bussmann Data Sheet 10164 (500V AC gG)
+    // =========================================================================
     ...[
       { id: 'hrc-2',      part: '2NHG000B',   size: 'NH000', amps: 2,    wLink: 3.9,   wBase: 0.6,  h: 160 },
       { id: 'hrc-4',      part: '4NHG000B',   size: 'NH000', amps: 4,    wLink: 1.8,   wBase: 0.6,  h: 160 },
@@ -325,6 +453,10 @@ window.SGCatalog = (function () {
       return {
         id: f.id,
         category: 'HRC Fuse-Switch',
+        manufacturer: 'Eaton Bussmann',
+        modelSeries: `${f.size} gG HRC`,
+        sizeValue: f.amps,
+        sizeLabel: `${f.amps} A`,
         name: `Eaton ${f.part} — ${f.amps}A ${f.size} gG HRC (${f.wLink}W/link)`,
         role: 'feeder',
         ratedCurrentA: f.amps,
@@ -332,6 +464,8 @@ window.SGCatalog = (function () {
         fixedLossW: 0,
         defaultHeightMm: f.h,
         notes: `Eaton Bussmann Data Sheet 10164 (500V AC gG): 3×${f.part} (${f.wLink}W/link = ${links3P}W) + Fuse-Switch/Base contacts (${f.wBase}W)`,
+        sourceRef: `Eaton Bussmann Data Sheet 10164 — ${f.part} (${f.size} gG 500V AC)`,
+        sourceUrl: SOURCE_URLS.eatonNH,
         subComponents: [
           { name: `3× Eaton ${f.part} HRC Links (${f.wLink}W ea)`, ratedCurrentA: f.amps, ratedLossW: links3P, fixedLossW: 0 },
           { name: `${f.size} Fuse-Switch / Base Contacts (3P)`, ratedCurrentA: f.amps, ratedLossW: f.wBase, fixedLossW: 0 },
@@ -339,211 +473,71 @@ window.SGCatalog = (function () {
       };
     }),
 
-    // --- DOL Starters ---
-    {
-      id: 'dol-7.5kw',
-      category: 'DOL Starter',
-      name: 'DOL Starter 7.5 kW (16A / 25A frame)',
-      role: 'feeder',
-      ratedCurrentA: 25,
-      ratedLossW: 18,
-      fixedLossW: 9,
-      defaultKw: 7.5,
-      defaultHeightMm: 200,
-      notes: 'MPCB + AC3 Contactor + Thermal Overload + Control Coil/Aux',
-      subComponents: [
-        { name: 'MPCB / Isolator', ratedCurrentA: 25, ratedLossW: 7, fixedLossW: 0 },
-        { name: 'Main Contactor (AC-3 Poles + Coil)', ratedCurrentA: 25, ratedLossW: 5, fixedLossW: 6 },
-        { name: 'Thermal Overload Relay', ratedCurrentA: 25, ratedLossW: 6, fixedLossW: 0 },
-        { name: 'Control Transformer / Pilot Lamps', ratedCurrentA: 25, ratedLossW: 0, fixedLossW: 3 },
-      ],
-    },
-    {
-      id: 'dol-15kw',
-      category: 'DOL Starter',
-      name: 'DOL Starter 15 kW (32A / 40A frame)',
-      role: 'feeder',
-      ratedCurrentA: 40,
-      ratedLossW: 27,
-      fixedLossW: 12,
-      defaultKw: 15,
-      defaultHeightMm: 220,
-      notes: 'MPCB/MCCB + 40A Contactor + Overload + Control Circuit',
-      subComponents: [
-        { name: 'MPCB / MCCB Isolator', ratedCurrentA: 40, ratedLossW: 11, fixedLossW: 0 },
-        { name: 'Main Contactor (40A Poles + Coil)', ratedCurrentA: 40, ratedLossW: 9, fixedLossW: 8 },
-        { name: 'Thermal Overload Relay', ratedCurrentA: 40, ratedLossW: 7, fixedLossW: 0 },
-        { name: 'Control Transformer / Indicators', ratedCurrentA: 40, ratedLossW: 0, fixedLossW: 4 },
-      ],
-    },
-    {
-      id: 'dol-22kw',
-      category: 'DOL Starter',
-      name: 'DOL Starter 22 kW (50A / 63A frame)',
-      role: 'feeder',
-      ratedCurrentA: 63,
-      ratedLossW: 36,
-      fixedLossW: 15,
-      defaultKw: 22,
-      defaultHeightMm: 250,
-      notes: 'MCCB + 65A Contactor + Overload + Control Circuit',
-      subComponents: [
-        { name: 'MCCB Isolator (63A)', ratedCurrentA: 63, ratedLossW: 15, fixedLossW: 0 },
-        { name: 'Main Contactor (65A Poles + Coil)', ratedCurrentA: 63, ratedLossW: 13, fixedLossW: 10 },
-        { name: 'Overload Relay', ratedCurrentA: 63, ratedLossW: 8, fixedLossW: 0 },
-        { name: 'Control Transformer / Aux', ratedCurrentA: 63, ratedLossW: 0, fixedLossW: 5 },
-      ],
-    },
-    {
-      id: 'dol-37kw',
-      category: 'DOL Starter',
-      name: 'DOL Starter 37 kW (80A / 100A frame)',
-      role: 'feeder',
-      ratedCurrentA: 100,
-      ratedLossW: 55,
-      fixedLossW: 18,
-      defaultKw: 37,
-      defaultHeightMm: 300,
-      notes: 'MCCB 100A + 95A Contactor + Electronic Overload + Control',
-      subComponents: [
-        { name: 'MCCB Isolator (100A)', ratedCurrentA: 100, ratedLossW: 24, fixedLossW: 0 },
-        { name: 'Main Contactor (95A Poles + Coil)', ratedCurrentA: 100, ratedLossW: 21, fixedLossW: 12 },
-        { name: 'Electronic Overload Relay', ratedCurrentA: 100, ratedLossW: 10, fixedLossW: 2 },
-        { name: 'Control Transformer / Aux', ratedCurrentA: 100, ratedLossW: 0, fixedLossW: 4 },
-      ],
-    },
-    {
-      id: 'dol-55kw',
-      category: 'DOL Starter',
-      name: 'DOL Starter 55 kW (125A / 160A frame)',
-      role: 'feeder',
-      ratedCurrentA: 160,
-      ratedLossW: 78,
-      fixedLossW: 22,
-      defaultKw: 55,
-      defaultHeightMm: 350,
-      notes: 'MCCB 160A + 150A Contactor + Overload + Control',
-      subComponents: [
-        { name: 'MCCB Isolator (160A)', ratedCurrentA: 160, ratedLossW: 32, fixedLossW: 0 },
-        { name: 'Main Contactor (150A Poles + Coil)', ratedCurrentA: 160, ratedLossW: 34, fixedLossW: 15 },
-        { name: 'Electronic Overload Relay', ratedCurrentA: 160, ratedLossW: 12, fixedLossW: 2 },
-        { name: 'Control Transformer / Aux', ratedCurrentA: 160, ratedLossW: 0, fixedLossW: 5 },
-      ],
-    },
+    // =========================================================================
+    // 4. MCBs — Miniature Circuit Breakers (6A – 125A)
+    // =========================================================================
+    makeMcb('mcb-6',   6,   4.5,  150),
+    makeMcb('mcb-10',  10,  5.4,  150),
+    makeMcb('mcb-16',  16,  6.6,  150),
+    makeMcb('mcb-20',  20,  7.5,  150),
+    makeMcb('mcb-32',  32,  9.9,  150),
+    makeMcb('mcb-40',  40,  11.7, 150),
+    makeMcb('mcb-63',  63,  16.0, 150),
+    makeMcb('mcb-80',  80,  21.0, 160),
+    makeMcb('mcb-100', 100, 25.5, 160),
+    makeMcb('mcb-125', 125, 31.5, 170),
 
-    // --- Star-Delta Starters ---
-    {
-      id: 'sd-75kw',
-      category: 'Star-Delta Starter',
-      name: 'Star-Delta Starter 75 kW (160A / 200A frame)',
-      role: 'feeder',
-      ratedCurrentA: 200,
-      ratedLossW: 108,
-      fixedLossW: 34,
-      defaultKw: 75,
-      defaultHeightMm: 450,
-      notes: 'MCCB + Main & Delta Contactors energized in run mode (58% current each) + Overload + Timer',
-      subComponents: [
-        { name: 'MCCB Isolator (200A)', ratedCurrentA: 200, ratedLossW: 40, fixedLossW: 0 },
-        { name: 'Main + Delta Contactors (Run Mode)', ratedCurrentA: 200, ratedLossW: 52, fixedLossW: 24 },
-        { name: 'Overload Relay', ratedCurrentA: 200, ratedLossW: 16, fixedLossW: 2 },
-        { name: 'Control & Star-Delta Timer', ratedCurrentA: 200, ratedLossW: 0, fixedLossW: 8 },
-      ],
-    },
+    // =========================================================================
+    // 5. MCCBs — Moulded Case Circuit Breakers (16A – 1600A)
+    // =========================================================================
+    makeMccb('mccb-16',   16,   '3P Thermal-Mag', 9.0,   0, 180, 'Generic 16A MCCB (~3W/pole at In)'),
+    makeMccb('mccb-25',   25,   '3P Thermal-Mag', 10.5,  0, 180, 'Generic 25A MCCB (~3.5W/pole at In)'),
+    makeMccb('mccb-32',   32,   '3P Thermal-Mag', 12.0,  0, 180, 'Generic 32A MCCB (~4W/pole at In)'),
+    makeMccb('mccb-40',   40,   '3P Thermal-Mag', 13.5,  0, 180, 'Generic 40A MCCB (~4.5W/pole at In)'),
+    makeMccb('mccb-63',   63,   '3P Thermal-Mag', 18.0,  0, 190, 'Generic 63A MCCB (~6W/pole at In)'),
+    makeMccb('mccb-100',  100,  '3P Thermal-Mag', 24.0,  0, 200, 'Generic 100A frame MCCB (~8W/pole at In)'),
+    makeMccb('mccb-125',  125,  '3P Thermal-Mag', 27.0,  0, 200, 'Generic 125A frame MCCB (~9W/pole at In)'),
+    makeMccb('mccb-160',  160,  '3P Electronic',  30.0,  2, 200, 'Generic 160A frame MCCB (~10W/pole at In)'),
+    makeMccb('mccb-250',  250,  '3P Electronic',  42.0,  2, 250, 'Generic 250A frame MCCB (~14W/pole at In)'),
+    makeMccb('mccb-400',  400,  '3P Electronic',  66.0,  3, 300, 'Generic 400A frame MCCB (~22W/pole at In)'),
+    makeMccb('mccb-630',  630,  '3P Electronic',  114.0, 4, 400, 'Generic 630A frame MCCB (~38W/pole at In)'),
+    makeMccb('mccb-800',  800,  '3P Electronic',  165.0, 5, 450, 'Generic 800A frame MCCB (~55W/pole at In)'),
+    makeMccb('mccb-1000', 1000, '3P Electronic',  210.0, 6, 500, 'Generic 1000A frame MCCB (~70W/pole at In)'),
+    makeMccb('mccb-1250', 1250, '3P Electronic',  270.0, 8, 550, 'Generic 1250A frame MCCB (~90W/pole at In)'),
+    makeMccb('mccb-1600', 1600, '3P Electronic',  360.0, 10, 600, 'Generic 1600A frame MCCB (~120W/pole at In)'),
 
-    // --- Soft Starter ---
-    {
-      id: 'ss-30kw',
-      category: 'Soft Starter',
-      name: 'Soft Starter 30 kW (Bypassed Run, 80A)',
-      role: 'feeder',
-      ratedCurrentA: 80,
-      ratedLossW: 36,
-      fixedLossW: 25,
-      defaultKw: 30,
-      defaultHeightMm: 350,
-      notes: 'MCCB + Soft Starter with internal bypass contactor in steady-state run',
-      subComponents: [
-        { name: 'MCCB Isolator (100A)', ratedCurrentA: 100, ratedLossW: 22, fixedLossW: 0 },
-        { name: 'Soft Starter Bypass Poles', ratedCurrentA: 80, ratedLossW: 14, fixedLossW: 0, lossModel: 'bypassed_soft_starter' },
-        { name: 'Soft Starter Electronics & Fan', ratedCurrentA: 80, ratedLossW: 0, fixedLossW: 25 },
-      ],
-    },
+    // =========================================================================
+    // 6. Soft Starters — Bypassed Run (7.5 kW – 250 kW) + Non-Bypassed SCR
+    // =========================================================================
+    makeSoftStarter('ss-7.5kw',   7.5,  25,  7,   6,   15, 260, false),
+    makeSoftStarter('ss-11kw',    11.0, 32,  9,   7,   18, 280, false),
+    makeSoftStarter('ss-15kw',    15.0, 40,  11,  8,   20, 300, false),
+    makeSoftStarter('ss-18.5kw',  18.5, 50,  13,  10,  22, 310, false),
+    makeSoftStarter('ss-22kw',    22.0, 63,  16,  11,  22, 320, false),
+    makeSoftStarter('ss-30kw',    30.0, 80,  22,  14,  25, 350, false),
+    makeSoftStarter('ss-37kw',    37.0, 100, 24,  17,  28, 360, false),
+    makeSoftStarter('ss-45kw',    45.0, 125, 28,  20,  32, 380, false),
+    makeSoftStarter('ss-55kw',    55.0, 160, 34,  25,  35, 420, false),
+    makeSoftStarter('ss-75kw',    75.0, 200, 42,  32,  42, 460, false),
+    makeSoftStarter('ss-90kw',    90.0, 250, 50,  38,  48, 500, false),
+    makeSoftStarter('ss-110kw',   110,  250, 55,  45,  55, 540, false),
+    makeSoftStarter('ss-132kw',   132,  315, 65,  54,  60, 580, false),
+    makeSoftStarter('ss-160kw',   160,  400, 75,  64,  68, 620, false),
+    makeSoftStarter('ss-200kw',   200,  400, 92,  80,  75, 680, false),
+    makeSoftStarter('ss-250kw',   250,  630, 118, 102, 85, 740, false),
+    makeSoftStarter('ss-nb-30kw', 30.0, 80,  22,  210, 35, 400, true),
+    makeSoftStarter('ss-nb-75kw', 75.0, 200, 42,  520, 55, 520, true),
 
-    // --- VSD / Inverter ---
-    {
-      id: 'vsd-45kw',
-      category: 'VSD / Inverter',
-      name: 'VSD / Inverter Drive 45 kW (~2.8% loss)',
-      role: 'feeder',
-      ratedCurrentA: 90,
-      ratedLossW: 1260,
-      fixedLossW: 65,
-      defaultKw: 45,
-      defaultHeightMm: 600,
-      notes: 'High heat source! ~2.8% of rated motor kW dissipated in IGBT/rectifier + MCCB + cooling fans',
-      subComponents: [
-        { name: 'Input MCCB / Fuse Isolator (125A)', ratedCurrentA: 125, ratedLossW: 28, fixedLossW: 0 },
-        { name: 'VSD Rectifier & IGBT Power Stage', ratedCurrentA: 90, ratedLossW: 1232, fixedLossW: 0, lossModel: 'vsd_efficiency' },
-        { name: 'VSD Control Board & Fans', ratedCurrentA: 90, ratedLossW: 0, fixedLossW: 65 },
-      ],
-    },
-    {
-      id: 'vsd-15kw',
-      category: 'VSD / Inverter',
-      name: 'VSD / Inverter Drive 15 kW (~3.0% loss)',
-      role: 'feeder',
-      ratedCurrentA: 32,
-      ratedLossW: 450,
-      fixedLossW: 35,
-      defaultKw: 15,
-      defaultHeightMm: 400,
-      notes: '15 kW VSD with input MCCB & rectifier/inverter power loss',
-      subComponents: [
-        { name: 'Input MCCB (40A)', ratedCurrentA: 40, ratedLossW: 12, fixedLossW: 0 },
-        { name: 'VSD Power Stage (~3%)', ratedCurrentA: 32, ratedLossW: 438, fixedLossW: 0, lossModel: 'vsd_efficiency' },
-        { name: 'VSD Control & Fan', ratedCurrentA: 32, ratedLossW: 0, fixedLossW: 35 },
-      ],
-    },
-
-    // --- Interconnector Feeder ---
-    {
-      id: 'interconn-1600',
-      category: 'ACB',
-      name: 'Interconnector ACB 1600A (Firm Supply Link)',
-      role: 'interconnector',
-      ratedCurrentA: 1600,
-      ratedLossW: 260,
-      fixedLossW: 15,
-      defaultHeightMm: 750,
-      notes: 'Outgoing interconnector feeder supplying remote B-Side firm supply switchboard',
-      subComponents: [
-        { name: 'Interconnector ACB Poles & Cradle', ratedCurrentA: 1600, ratedLossW: 260, fixedLossW: 0 },
-        { name: 'Protection Relay / Interlock Aux', ratedCurrentA: 1600, ratedLossW: 0, fixedLossW: 15 },
-      ],
-    },
-
-    // --- Bus Coupler ---
-    {
-      id: 'coupler-2500',
-      category: 'ACB',
-      name: 'Bus-Section / Coupler ACB 2500A',
-      role: 'bus_coupler',
-      ratedCurrentA: 2500,
-      ratedLossW: 440,
-      fixedLossW: 15,
-      defaultHeightMm: 800,
-      notes: 'Bus-section coupler between Section A and Section B',
-      subComponents: [
-        { name: 'Bus Coupler ACB Poles', ratedCurrentA: 2500, ratedLossW: 440, fixedLossW: 0 },
-        { name: 'Interlock & Metering Aux', ratedCurrentA: 2500, ratedLossW: 0, fixedLossW: 15 },
-      ],
-    },
-
-    // --- Spare Spaces & Placeholders ---
+    // =========================================================================
+    // 7. Spare Spaces, Placeholders & Auxiliary Chambers
+    // =========================================================================
     {
       id: 'spare-space',
-      category: 'Spare Space',
+      category: 'Spare / Placeholder',
+      manufacturer: 'Switchgear Enclosure',
+      modelSeries: 'Blank Reserve Bay',
+      sizeValue: 0,
+      sizeLabel: '0 W',
       name: 'Spare Space / Blank Reserve Bay (0 W)',
       role: 'spacer',
       ratedCurrentA: 1,
@@ -551,10 +545,16 @@ window.SGCatalog = (function () {
       fixedLossW: 0,
       defaultHeightMm: 250,
       notes: 'Physical blank/equipped spare space occupying cubicle height on GA (0 A, 0 W)',
+      sourceRef: 'IEC 61439-1 Physical Compartment Allocation',
+      sourceUrl: SOURCE_URLS.iec61439_1,
     },
     {
       id: 'placeholder-bay',
-      category: 'Placeholder',
+      category: 'Spare / Placeholder',
+      manufacturer: 'Switchgear Enclosure',
+      modelSeries: 'Future Placeholder',
+      sizeValue: 0,
+      sizeLabel: '0 W',
       name: 'Equipment Placeholder Bay (0 W)',
       role: 'spacer',
       ratedCurrentA: 1,
@@ -562,10 +562,16 @@ window.SGCatalog = (function () {
       fixedLossW: 0,
       defaultHeightMm: 300,
       notes: 'Reserves physical space on GA for undefined future equipment or marshalling',
+      sourceRef: 'IEC 61439-1 Physical Compartment Allocation',
+      sourceUrl: SOURCE_URLS.iec61439_1,
     },
     {
       id: 'aux-chamber',
-      category: 'Chamber / Aux',
+      category: 'Spare / Placeholder',
+      manufacturer: 'Switchgear Enclosure',
+      modelSeries: 'Metering / Control Aux',
+      sizeValue: 15,
+      sizeLabel: '15 W aux',
       name: 'Metering / Marshalling Chamber (15 W aux)',
       role: 'spacer',
       ratedCurrentA: 1,
@@ -573,16 +579,90 @@ window.SGCatalog = (function () {
       fixedLossW: 15,
       defaultHeightMm: 300,
       notes: 'Control, metering, or cable marshalling compartment with small fixed auxiliary heat',
+      sourceRef: 'Typical Panel Metering / Control PSU Allowance',
+      sourceUrl: SOURCE_URLS.iec61439_1,
     },
+
+    // =========================================================================
+    // 8. Star-Delta Starters — Complete IEC 400V Series (11 kW – 160 kW)
+    // =========================================================================
+    makeStarDelta('sd-11kw',   11.0, 32,  9,   14,  14, 6,  5,  300),
+    makeStarDelta('sd-15kw',   15.0, 40,  11,  17,  15, 7,  5,  320),
+    makeStarDelta('sd-18.5kw', 18.5, 50,  13,  20,  16, 8,  6,  340),
+    makeStarDelta('sd-22kw',   22.0, 63,  16,  23,  17, 9,  6,  360),
+    makeStarDelta('sd-30kw',   30.0, 80,  20,  28,  18, 10, 6,  380),
+    makeStarDelta('sd-37kw',   37.0, 100, 24,  33,  20, 11, 7,  400),
+    makeStarDelta('sd-45kw',   45.0, 125, 29,  39,  21, 13, 7,  420),
+    makeStarDelta('sd-55kw',   55.0, 160, 34,  45,  22, 14, 8,  430),
+    makeStarDelta('sd-75kw',   75.0, 200, 40,  52,  24, 16, 10, 450),
+    makeStarDelta('sd-90kw',   90.0, 250, 48,  64,  26, 18, 10, 500),
+    makeStarDelta('sd-110kw',  110,  250, 56,  76,  28, 21, 12, 540),
+    makeStarDelta('sd-132kw',  132,  315, 66,  90,  30, 24, 12, 580),
+    makeStarDelta('sd-160kw',  160,  400, 78,  108, 34, 28, 14, 620),
+
+    // =========================================================================
+    // 9. VSD / Variable Speed Drives — Complete Series (0.75 kW – 250 kW)
+    // =========================================================================
+    makeVsd('vsd-0.75kw', 0.75, 4,   4.5, 4,   12, 260),
+    makeVsd('vsd-1.5kw',  1.5,  6,   4.2, 5,   15, 280),
+    makeVsd('vsd-2.2kw',  2.2,  9,   4.0, 6,   18, 300),
+    makeVsd('vsd-4kw',    4.0,  12,  3.8, 7,   22, 320),
+    makeVsd('vsd-5.5kw',  5.5,  16,  3.5, 8,   25, 340),
+    makeVsd('vsd-7.5kw',  7.5,  20,  3.3, 9,   28, 360),
+    makeVsd('vsd-11kw',   11.0, 25,  3.1, 11,  32, 380),
+    makeVsd('vsd-15kw',   15.0, 32,  3.0, 12,  35, 400),
+    makeVsd('vsd-18.5kw', 18.5, 40,  2.9, 14,  40, 440),
+    makeVsd('vsd-22kw',   22.0, 50,  2.9, 16,  45, 480),
+    makeVsd('vsd-30kw',   30.0, 63,  2.8, 20,  52, 520),
+    makeVsd('vsd-37kw',   37.0, 80,  2.8, 24,  58, 560),
+    makeVsd('vsd-45kw',   45.0, 90,  2.8, 28,  65, 600),
+    makeVsd('vsd-55kw',   55.0, 125, 2.7, 34,  75, 660),
+    makeVsd('vsd-75kw',   75.0, 160, 2.6, 44,  90, 740),
+    makeVsd('vsd-90kw',   90.0, 200, 2.6, 52,  105, 820),
+    makeVsd('vsd-110kw',  110,  250, 2.5, 64,  120, 900),
+    makeVsd('vsd-132kw',  132,  315, 2.5, 76,  135, 980),
+    makeVsd('vsd-160kw',  160,  400, 2.4, 92,  155, 1080),
+    makeVsd('vsd-200kw',  200,  400, 2.4, 115, 180, 1200),
+    makeVsd('vsd-250kw',  250,  630, 2.3, 145, 210, 1320),
   ];
+
+  function naturalCompare(a, b) {
+    return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
+  }
+
+  /**
+   * Sort device library strictly by:
+   *   1. Type (category)
+   *   2. Manufacturer
+   *   3. Model Type / Series
+   *   4. Size (numeric kW or A ascending)
+   */
+  function sortDeviceLibrary(list) {
+    return [...(list || [])].sort((a, b) => {
+      const c1 = naturalCompare(a.category, b.category);
+      if (c1 !== 0) return c1;
+      const m1 = naturalCompare(a.manufacturer || 'Generic IEC', b.manufacturer || 'Generic IEC');
+      if (m1 !== 0) return m1;
+      const s1 = naturalCompare(a.modelSeries || '', b.modelSeries || '');
+      if (s1 !== 0) return s1;
+      const szA = Number(a.sizeValue != null ? a.sizeValue : a.defaultKw != null ? a.defaultKw : a.ratedCurrentA) || 0;
+      const szB = Number(b.sizeValue != null ? b.sizeValue : b.defaultKw != null ? b.defaultKw : b.ratedCurrentA) || 0;
+      if (szA !== szB) return szA - szB;
+      return (Number(a.ratedCurrentA) || 0) - (Number(b.ratedCurrentA) || 0);
+    });
+  }
+
+  const DEFAULT_DEVICE_TEMPLATES = sortDeviceLibrary(RAW_DEVICE_TEMPLATES);
 
   function cloneTemplate(tpl) {
     return JSON.parse(JSON.stringify(tpl));
   }
 
   return {
+    SOURCE_URLS,
     BUSBAR_PRESETS,
     DEFAULT_DEVICE_TEMPLATES,
+    sortDeviceLibrary,
     cloneTemplate,
   };
 })();

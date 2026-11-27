@@ -217,7 +217,7 @@ window.SGGA = (function () {
         <g class="clickable draggable-item" data-select-type="column" data-col-index="${colIdx}" data-drag-col="${colIdx}">
           <text x="${cx0 + colW / 2}" y="${floorY + 18}" text-anchor="middle" fill="${P.title}" font-size="10.2" font-weight="700" font-family="Inter, sans-serif">⋮⋮ ${esc(truncate(cr.col.name, 18))}</text>
           <text x="${cx0 + colW / 2}" y="${floorY + 32}" text-anchor="middle" fill="${P.warmText}" font-size="9.3" font-weight="600" font-family="JetBrains Mono, monospace">Col: ${cr.colTotalLossW.toFixed(0)}W (VBB ${cr.vbbTotalLossW.toFixed(0)}W)</text>
-          <text x="${cx0 + colW / 2}" y="${floorY + 45}" text-anchor="middle" fill="${P.textDim}" font-size="8.6" font-family="JetBrains Mono, monospace">${cr.hasIncomer ? 'Incomer: ' + Math.round(cr.incomerSupplyA) + 'A' : cr.hasCoupler ? 'Bus Coupler' : 'Load: ' + Math.round(cr.colTotalLoadA) + 'A'}</text>
+          <text x="${cx0 + colW / 2}" y="${floorY + 45}" text-anchor="middle" fill="${P.textDim}" font-size="8.6" font-family="JetBrains Mono, monospace">${cr.hasIncomer && cr.colInterconnectorA > 0 ? 'Inc: ' + Math.round(cr.incomerSupplyA) + 'A · IC: ' + Math.round(cr.colInterconnectorA) + 'A' : cr.hasIncomer ? 'Incomer: ' + Math.round(cr.incomerSupplyA) + 'A' : cr.hasCoupler ? 'Bus Coupler' : 'Load: ' + Math.round(cr.colTotalLoadA) + 'A'}</text>
         </g>
       `);
 

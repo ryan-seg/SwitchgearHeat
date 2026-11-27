@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '2.6.0';
+  const APP_VERSION = '2.7.1';
 
   function loadInitialProject() {
     try {
@@ -329,6 +329,13 @@
       });
     });
 
+    container.querySelectorAll('[data-action="add-interconn-tier"]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        addTierToColumn(Number(el.dataset.colIndex), 'interconn-1250');
+      });
+    });
+
     container.querySelectorAll('[data-action="add-column"]').forEach((el) => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -528,6 +535,25 @@
     renderAll();
   }
 
+  function renderSortedTemplateOptions(selectedId) {
+    const sorted = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary);
+    const groups = new Map();
+    sorted.forEach((t) => {
+      const grpKey = `${t.category || 'Other'} — ${t.manufacturer || 'Generic IEC'}${t.modelSeries ? ' (' + t.modelSeries + ')' : ''}`;
+      if (!groups.has(grpKey)) groups.set(grpKey, []);
+      groups.get(grpKey).push(t);
+    });
+    let html = '';
+    groups.forEach((items, label) => {
+      html += `<optgroup label="${esc(label)}">`;
+      items.forEach((t) => {
+        html += `<option value="${esc(t.id)}" ${selectedId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`;
+      });
+      html += `</optgroup>`;
+    });
+    return html;
+  }
+
   function addTierToColumn(colIndex, templateId) {
     const col = project.columns[colIndex];
     if (!col) return;
@@ -536,20 +562,79 @@
     const isSpare = templateId === 'spare-space';
     const isPlaceholder = templateId === 'placeholder-bay';
     const isAux = templateId === 'aux-chamber';
+    const isInterconn = String(templateId || '').startsWith('interconn-');
     const defaultTag = isSpare
       ? `SP-${colIndex + 1}0${nextNum}`
       : isPlaceholder
       ? `PH-${colIndex + 1}0${nextNum}`
       : isAux
       ? `AUX-${colIndex + 1}0${nextNum}`
+      : isInterconn
+      ? `IC-AB`
       : `F-${colIndex + 1}0${nextNum}`;
     const newTier = window.SGState.makeTierFromTemplate(
       templateId || 'mccb-250',
       { tag: defaultTag },
       project.deviceLibrary
     );
+    if (!col.verticalBusbar && (newTier.role === 'feeder' || newTier.role === 'interconnector')) {
+      col.verticalBusbar = newTier.role === 'interconnector'
+        ? Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' })
+        : JSON.parse(JSON.stringify(project.defaultVerticalBusbar));
+    }
     col.tiers.push(newTier);
     selection = { type: 'tier', colIndex, tierIndex: col.tiers.length - 1 };
+    renderAll();
+  }
+
+  function relocateInterconnector(colIdx, tierIdx, mode) {
+    const srcCol = project.columns[colIdx];
+    const tier = srcCol && srcCol.tiers[tierIdx];
+    if (!tier) return;
+    const incColIdx = project.columns.findIndex((c) => c.tiers.some((t) => t.role === 'incomer'));
+    pushUndo();
+
+    if (mode === 'stack_incomer') {
+      if (incColIdx < 0 || incColIdx === colIdx) return;
+      const [moved] = srcCol.tiers.splice(tierIdx, 1);
+      const targetCol = project.columns[incColIdx];
+      if (!targetCol.verticalBusbar) {
+        targetCol.verticalBusbar = Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' });
+      }
+      targetCol.tiers.push(moved);
+      let newIncIdx = incColIdx;
+      if (srcCol.tiers.length === 0 && project.columns.length > 1) {
+        project.columns.splice(colIdx, 1);
+        if (colIdx < incColIdx) newIncIdx -= 1;
+      }
+      selection = { type: 'tier', colIndex: newIncIdx, tierIndex: targetCol.tiers.length - 1 };
+      renderAll();
+      return;
+    }
+
+    // Move to dedicated column on LEFT (other side) or RIGHT of the Incomer
+    const isOwnCol = srcCol.tiers.length === 1;
+    let movingCol;
+    let removedSrcColAt = -1;
+    if (isOwnCol) {
+      [movingCol] = project.columns.splice(colIdx, 1);
+      removedSrcColAt = colIdx;
+    } else {
+      const [moved] = srcCol.tiers.splice(tierIdx, 1);
+      movingCol = {
+        id: window.SGState.uid('col'),
+        name: `COL Interconnector`,
+        widthMm: 800,
+        verticalBusbar: Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' }),
+        tiers: [moved],
+      };
+    }
+
+    let curIncIdx = project.columns.findIndex((c) => c.tiers.some((t) => t.role === 'incomer'));
+    if (curIncIdx < 0) curIncIdx = 0;
+    const insertAt = mode === 'left_of_incomer' ? curIncIdx : project.columns.length;
+    project.columns.splice(insertAt, 0, movingCol);
+    selection = { type: 'tier', colIndex: insertAt, tierIndex: 0 };
     renderAll();
   }
 
@@ -579,7 +664,8 @@
     } else if (kind === 'coupler') {
       col.tiers.push(window.SGState.makeTierFromTemplate('coupler-2500', { tag: `BC-${num}`, role: 'bus_coupler', couplerState: 'open' }, project.deviceLibrary));
     } else if (kind === 'interconnector') {
-      col.tiers.push(window.SGState.makeTierFromTemplate('interconn-1600', { tag: `IC-${num}`, role: 'interconnector' }, project.deviceLibrary));
+      col.verticalBusbar = Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' });
+      col.tiers.push(window.SGState.makeTierFromTemplate('interconn-1250', { tag: `IC-${num}`, role: 'interconnector' }, project.deviceLibrary));
     } else if (kind === 'spare') {
       col.tiers.push(window.SGState.makeTierFromTemplate('spare-space', { tag: `SP-${num}01`, heightMm: 500 }, project.deviceLibrary));
       col.tiers.push(window.SGState.makeTierFromTemplate('placeholder-bay', { tag: `PH-${num}02`, heightMm: 500 }, project.deviceLibrary));
@@ -640,7 +726,7 @@
             <option value="">— Custom Construction —</option>
             ${presets.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
           </select>
-          <span class="field-hint">Ex: 1600A = 2×75×6mm (900mm²), 2500A = 2×100×10mm</span>
+          <span class="field-hint">Ex: 1250A = 2×75×6mm (900mm²), 1600A = 2×80×8mm, 2500A = 2×100×10mm</span>
         </div>
         <div class="field">
           ${lbl('Type 439 / IEC 61439 Certificate Ref', 'bb.cert')}
@@ -837,17 +923,18 @@
       </div>
 
       <div class="insp-section">
-        <div class="insp-section-title">Add Compartment / Spare / Placeholder</div>
+        <div class="insp-section-title">Add Compartment / Interconnector / Spare</div>
         <div class="field">
-          ${lbl('Select Device / Starter / Spare Template', 'tier.template')}
+          ${lbl('Select Device / Starter / Spare Template (Sorted: Type → Mfg → Model → Size)', 'tier.template')}
           <select id="col-add-tpl">
-            ${project.deviceLibrary.map((t) => `<option value="${t.id}">[${esc(t.category)}] ${esc(t.name)}</option>`).join('')}
+            ${renderSortedTemplateOptions()}
           </select>
-          <span class="field-hint">Pick a starter, breaker, spare space, or placeholder bay</span>
+          <span class="field-hint">Sorted by Type → Manufacturer → Model Series → Size (A / kW)</span>
         </div>
         <div class="action-row">
           <button id="col-add-tier-btn" class="btn btn-sm btn-primary">+ Add Selected</button>
-          <button id="col-add-spare-btn" class="btn btn-sm btn-secondary">+ Spare Space</button>
+          <button id="col-add-ic-btn" class="btn btn-sm btn-secondary" title="Add 1250A Interconnector ACB tier to this column">+ 1250A IC Tier</button>
+          <button id="col-add-spare-btn" class="btn btn-sm btn-secondary">+ Spare</button>
           <button id="col-add-ph-btn" class="btn btn-sm btn-secondary">+ Placeholder</button>
         </div>
       </div>
@@ -903,6 +990,7 @@
     document.getElementById('col-add-tier-btn').addEventListener('click', () => {
       addTierToColumn(colIdx, document.getElementById('col-add-tpl').value);
     });
+    document.getElementById('col-add-ic-btn').addEventListener('click', () => addTierToColumn(colIdx, 'interconn-1250'));
     document.getElementById('col-add-spare-btn').addEventListener('click', () => addTierToColumn(colIdx, 'spare-space'));
     document.getElementById('col-add-ph-btn').addEventListener('click', () => addTierToColumn(colIdx, 'placeholder-bay'));
   }
@@ -956,12 +1044,12 @@
           </div>
         </div>
         <div class="field">
-          ${lbl(isSpacer ? 'Convert Spare/Placeholder to Equipment' : 'Apply Device / Starter Template', 'tier.template')}
+          ${lbl(isSpacer ? 'Convert Spare/Placeholder to Equipment' : 'Apply Device / Starter Template (Sorted)', 'tier.template')}
           <select id="t-template">
             <option value="">— Keep Custom Settings —</option>
-            ${project.deviceLibrary.map((t) => `<option value="${t.id}" ${tier.templateId === t.id ? 'selected' : ''}>[${esc(t.category)}] ${esc(t.name)}</option>`).join('')}
+            ${renderSortedTemplateOptions(tier.templateId)}
           </select>
-          <span class="field-hint">Auto-fills typical rated In, Pn (W), fixed W &amp; height</span>
+          <span class="field-hint">Sorted by Type → Manufacturer → Model → Size (incl. 1250A IC ACB, full DOL/Star-Delta/VSD, Eaton 2A–1250A)</span>
         </div>
         <div class="action-row">
           <button id="t-up" class="btn btn-sm btn-secondary" ${tierIdx === 0 ? 'disabled' : ''}>↑ Up</button>
@@ -1038,6 +1126,13 @@
                   <span class="field-hint">Typ: 600–1600 A (B-side load)</span>
                 </div>
               </div>
+              <div class="insp-section-title" style="margin-top:6px;">Placement Relative to Incomer</div>
+              <div class="action-row" style="margin-bottom:6px;">
+                <button id="t-ic-left" class="btn btn-sm btn-secondary" title="Place Interconnector in a column on the LEFT (other side) of the Incomer">← Left of Incomer</button>
+                <button id="t-ic-stack" class="btn btn-sm btn-secondary" title="Stack Interconnector into a tier inside the Incomer column" ${col.tiers.some((x) => x.role === 'incomer') ? 'disabled' : ''}>⇅ Stack in Incomer Tier</button>
+                <button id="t-ic-right" class="btn btn-sm btn-secondary" title="Place Interconnector in a column on the RIGHT end of the board">→ Right of Board</button>
+              </div>
+              ${col.tiers.some((x) => x.role === 'incomer') ? '<span class="field-hint" style="display:block;margin-bottom:6px;color:var(--accent);">Currently stacked in a tier inside the Incomer column! Use ↑/↓ above or drag on GA/SLD to reposition.</span>' : ''}
               <div class="insp-section-title" style="margin-top:6px;">Internal Interconnector Cable Entry Loss</div>
               <label class="toggle-chip"><input type="checkbox" id="t-cable-en" ${tier.cableSpec && tier.cableSpec.includeCableLoss ? 'checked' : ''} /> Include internal cable riser heat loss</label>
               <div class="form-grid-3">
@@ -1164,6 +1259,21 @@
                 <div class="calc-row highlight"><span class="lbl">Compartment Total Loss:</span><span class="val">${(dl.pTotalW + (tr.takeoffLossW || 0) + (tr.cableLoss ? tr.cableLoss.totalW : 0)).toFixed(1)} W</span></div>
                 <div class="calc-explain-footer"><span>Click for full worked steps &amp; commentary</span><span>Analyse ↗</span></div>
               </div>
+
+              <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);">
+                <div class="insp-section-title">Datasheet / Evidence Link (Optional)</div>
+                <div class="field">
+                  <label>Manufacturer / Source Ref</label>
+                  <input type="text" id="t-source-ref" value="${esc(tier.sourceRef || '')}" placeholder="e.g. Eaton DS 10164 or Vendor Catalogue" />
+                </div>
+                <div class="field">
+                  <label>Datasheet / Evidence URL (Optional)</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input type="url" id="t-source-url" value="${esc(tier.sourceUrl || '')}" placeholder="https://… (optional)" style="flex:1;" />
+                    ${tier.sourceUrl ? `<a href="${esc(tier.sourceUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" style="text-decoration:none;white-space:nowrap;">🔗 Open ↗</a>` : ''}
+                  </div>
+                </div>
+              </div>
             </div>`
           : ''
       }
@@ -1193,6 +1303,11 @@
     on('t-remote-board', 'change', (e) => { pushUndo(); tier.remoteBoardName = e.target.value; renderAll(); });
     on('t-norm-a', 'change', (e) => { pushUndo(); tier.normalTransferCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
     on('t-n1-a', 'change', (e) => { pushUndo(); tier.n1TransferCurrentA = Math.max(0, Number(e.target.value) || 0); renderAll(); });
+    on('t-ic-left', 'click', () => relocateInterconnector(colIdx, tierIdx, 'left_of_incomer'));
+    on('t-ic-stack', 'click', () => relocateInterconnector(colIdx, tierIdx, 'stack_incomer'));
+    on('t-ic-right', 'click', () => relocateInterconnector(colIdx, tierIdx, 'right_of_board'));
+    on('t-source-ref', 'change', (e) => { pushUndo(); tier.sourceRef = e.target.value; window.SGState.saveProject(project); });
+    on('t-source-url', 'change', (e) => { pushUndo(); tier.sourceUrl = e.target.value.trim(); renderAll(true); });
     on('t-cable-en', 'change', (e) => {
       pushUndo();
       tier.cableSpec = tier.cableSpec || { material: 'cu_100', cablesPerPhase: 3, csaMm2: 240, internalLengthM: 2.5, operatingTempC: 70 };
@@ -1217,6 +1332,10 @@
       const c = window.SGCatalog.cloneTemplate(tpl);
       tier.templateId = c.id;
       tier.category = c.category;
+      tier.manufacturer = c.manufacturer || 'Generic IEC';
+      tier.modelSeries = c.modelSeries || '';
+      tier.sourceRef = c.sourceRef || '';
+      tier.sourceUrl = c.sourceUrl || '';
       tier.role = c.role || 'feeder';
       tier.description = c.name;
       tier.ratedCurrentA = c.ratedCurrentA;
@@ -1591,9 +1710,10 @@
     });
   }
 
-  // --- TAB 4: Editable Device, Fuse & Starter Library (with Category Filter & Search) ---
+  // --- TAB 4: Editable Device, Fuse & Starter Library (Sorted: Type -> Manufacturer -> Model -> Size) ---
   function renderLibraryView() {
     const el = document.getElementById('library-container');
+    project.deviceLibrary = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary);
     const categories = ['ALL', ...Array.from(new Set(project.deviceLibrary.map((t) => t.category)))];
     const q = libSearchQuery.trim().toLowerCase();
 
@@ -1601,30 +1721,30 @@
       .map((t, idx) => ({ t, idx }))
       .filter(({ t }) => {
         if (libFilterCategory !== 'ALL' && t.category !== libFilterCategory) return false;
-        if (q && !`${t.category} ${t.name} ${t.ratedCurrentA} ${t.notes || ''}`.toLowerCase().includes(q)) return false;
+        if (q && !`${t.category} ${t.manufacturer || ''} ${t.modelSeries || ''} ${t.name} ${t.ratedCurrentA} ${t.notes || ''} ${t.sourceRef || ''}`.toLowerCase().includes(q)) return false;
         return true;
       });
 
     el.innerHTML = `
       <div class="card">
         <h3>
-          Editable IEC Protective Device, Eaton HRC Fuse &amp; Starter Library (${project.deviceLibrary.length} items)
+          Editable IEC Protective Device, Eaton HRC Fuse &amp; Starter Library (${project.deviceLibrary.length} items · Sorted: Type → Manufacturer → Model → Size)
           <div class="action-row">
-            <button id="lib-sync-btn" class="btn btn-sm btn-secondary" title="Ensure all latest Eaton 2A–1250A HRC fuses & IEC templates are loaded">↻ Sync Default Library</button>
-            <button id="lib-add-btn" class="btn btn-sm btn-primary">+ New Custom Device Template</button>
+            <button id="lib-sync-btn" class="btn btn-sm btn-secondary" title="Ensure all latest ACBs (incl. 1250A IC), DOL, Star-Delta, Soft Starters, VSDs & Eaton 2A–1250A HRC fuses are loaded and sorted">↻ Sync &amp; Sort Library</button>
+            <button id="lib-add-btn" class="btn btn-sm btn-primary">+ New Custom Device</button>
           </div>
         </h3>
         <div class="lib-typ-banner">
-          <span><strong>Eaton Bussmann NH gG HRC Fuses (2 A – 1250 A, DS 10164):</strong></span>
-          <span>2NHG000B = 3.9 W/link</span>
-          <span>16NHG0B = 3.0 W/link</span>
-          <span>250NHG1B = 19 W/link</span>
-          <span>400NHG2B = 30 W/link</span>
-          <span>630NHG3B = 47 W/link</span>
-          <span>1250NHG4G = 108 W/link (324 W 3P + base)</span>
+          <span><strong>Full Sorted Catalog:</strong></span>
+          <span>ACBs 800–4000A (incl. 1250A IC)</span>
+          <span>DOL 0.75–55 kW</span>
+          <span>Star-Delta 11–160 kW</span>
+          <span>Soft Starters 7.5–250 kW</span>
+          <span>VSDs 0.75–250 kW</span>
+          <span>Eaton NH gG HRC 2A–1250A</span>
         </div>
         <div class="lib-filter-bar">
-          <input type="text" id="lib-search" value="${esc(libSearchQuery)}" placeholder="Search part no. or rating (e.g. 1250NHG4G, 16NHG0B, DOL, 400A)…" style="min-width:280px;" />
+          <input type="text" id="lib-search" value="${esc(libSearchQuery)}" placeholder="Search type, manufacturer, model or size (e.g. 1250A, 1250NHG4G, Star-Delta, Eaton)…" style="min-width:300px;" />
           ${categories
             .map(
               (cat) =>
@@ -1632,35 +1752,48 @@
             )
             .join('')}
         </div>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Template Name</th>
-              <th class="num"><span class="help-label" data-help="tier.in">Rated In (A)</span></th>
-              <th class="num"><span class="help-label" data-help="tier.pn">Rated Pn (W)</span></th>
-              <th class="num"><span class="help-label" data-help="tier.pfix">Fixed (W)</span></th>
-              <th class="num"><span class="help-label" data-help="tier.height">Height (mm)</span></th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filtered
-              .map(
-                ({ t, idx }) => `
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead>
               <tr>
-                <td><input type="text" data-lib-idx="${idx}" data-lib-field="category" value="${esc(t.category)}" style="width:120px;" /></td>
-                <td><input type="text" data-lib-idx="${idx}" data-lib-field="name" value="${esc(t.name)}" style="width:290px;" /></td>
-                <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedCurrentA" value="${t.ratedCurrentA}" style="width:72px;" /></td>
-                <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedLossW" value="${t.ratedLossW}" style="width:72px;" /></td>
-                <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="fixedLossW" value="${t.fixedLossW || 0}" style="width:65px;" /></td>
-                <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="defaultHeightMm" value="${t.defaultHeightMm || 250}" style="width:70px;" /></td>
-                <td><button class="btn btn-sm btn-danger" data-lib-del="${idx}">Remove</button></td>
-              </tr>`
-              )
-              .join('')}
-          </tbody>
-        </table>
+                <th>Type</th>
+                <th>Manufacturer</th>
+                <th>Model / Series</th>
+                <th>Device Name &amp; Size</th>
+                <th class="num"><span class="help-label" data-help="tier.in">In (A)</span></th>
+                <th class="num"><span class="help-label" data-help="tier.pn">Pn (W)</span></th>
+                <th class="num"><span class="help-label" data-help="tier.pfix">Fix (W)</span></th>
+                <th class="num"><span class="help-label" data-help="tier.height">H (mm)</span></th>
+                <th>Evidence / Datasheet Link (Optional)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered
+                .map(
+                  ({ t, idx }) => `
+                <tr>
+                  <td><input type="text" data-lib-idx="${idx}" data-lib-field="category" value="${esc(t.category)}" style="width:118px;" /></td>
+                  <td><input type="text" data-lib-idx="${idx}" data-lib-field="manufacturer" value="${esc(t.manufacturer || 'Generic IEC')}" style="width:105px;" /></td>
+                  <td><input type="text" data-lib-idx="${idx}" data-lib-field="modelSeries" value="${esc(t.modelSeries || '')}" style="width:140px;" /></td>
+                  <td><input type="text" data-lib-idx="${idx}" data-lib-field="name" value="${esc(t.name)}" style="width:235px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedCurrentA" value="${t.ratedCurrentA}" style="width:62px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedLossW" value="${t.ratedLossW}" style="width:64px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="fixedLossW" value="${t.fixedLossW || 0}" style="width:54px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="defaultHeightMm" value="${t.defaultHeightMm || 250}" style="width:58px;" /></td>
+                  <td>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                      <input type="url" data-lib-idx="${idx}" data-lib-field="sourceUrl" value="${esc(t.sourceUrl || '')}" placeholder="https://… (optional)" title="${esc(t.sourceRef || 'Optional datasheet / standard evidence URL')}" style="width:145px;" />
+                      ${t.sourceUrl ? `<a href="${esc(t.sourceUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary" style="padding:2px 6px;text-decoration:none;" title="${esc(t.sourceRef || t.sourceUrl)}">🔗</a>` : ''}
+                    </div>
+                  </td>
+                  <td><button class="btn btn-sm btn-danger" data-lib-del="${idx}">×</button></td>
+                </tr>`
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
 
@@ -1694,9 +1827,19 @@
         const f = inp.dataset.libField;
         const item = project.deviceLibrary[idx];
         if (!item) return;
-        item[f] = f === 'name' || f === 'category' ? inp.value : Number(inp.value) || 0;
+        const textFields = ['name', 'category', 'manufacturer', 'modelSeries', 'sourceUrl', 'sourceRef'];
+        item[f] = textFields.includes(f) ? inp.value.trim() : Number(inp.value) || 0;
         if (f === 'ratedLossW' && item.subComponents) item.subComponents = null;
-        window.SGState.saveProject(project);
+        if (f === 'category' || f === 'manufacturer' || f === 'modelSeries' || f === 'ratedCurrentA') {
+          if (f === 'ratedCurrentA' && !item.defaultKw) item.sizeValue = item.ratedCurrentA;
+          project.deviceLibrary = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary);
+          renderAll();
+        } else if (f === 'sourceUrl') {
+          renderLibraryView();
+          window.SGState.saveProject(project);
+        } else {
+          window.SGState.saveProject(project);
+        }
       });
     });
 
@@ -1711,9 +1854,13 @@
 
     document.getElementById('lib-add-btn').addEventListener('click', () => {
       pushUndo();
-      project.deviceLibrary.unshift({
+      project.deviceLibrary.push({
         id: window.SGState.uid('tpl'),
         category: 'MCCB',
+        manufacturer: 'Custom Manufacturer',
+        modelSeries: 'Custom Series',
+        sizeValue: 250,
+        sizeLabel: '250 A',
         name: 'Custom Device 250A (Manufacturer Data)',
         role: 'feeder',
         ratedCurrentA: 250,
@@ -1721,7 +1868,10 @@
         fixedLossW: 3,
         defaultHeightMm: 250,
         notes: 'Custom manufacturer entry',
+        sourceRef: '',
+        sourceUrl: '',
       });
+      project.deviceLibrary = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary);
       renderAll();
     });
   }
@@ -2279,7 +2429,7 @@
                 <select id="sm-bb">
                   ${bbPresets.map((p) => `<option value="${p.id}" ${sm.busbarPresetId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
                 </select>
-                <span class="field-hint">Ex: 1600A = 2×75×6mm (900mm²), 2500A = 2×100×10mm</span>
+                <span class="field-hint">Ex: 1250A = 2×75×6mm (900mm²), 1600A = 2×80×8mm, 2500A = 2×100×10mm</span>
               </div>
               <div class="field full">
                 ${lbl('Switchboard Topology', 'simple.topology')}
