@@ -266,7 +266,7 @@ window.SGGA = (function () {
             <line x1="${x1}" y1="${hbbY - 12}" x2="${x2}" y2="${hbbY - 12}" stroke="${color}" stroke-width="2.8" />
             <line x1="${x1}" y1="${hbbY - 6}" x2="${x2}" y2="${hbbY - 6}" stroke="${color}" stroke-width="2.8" />
             <rect x="${pillX}" y="${hbbY + 2}" width="${pillW}" height="24" rx="4" fill="${P.pillBg}" stroke="${color}" stroke-width="1" />
-            <text x="${pillCenterX}" y="${hbbY + 13}" text-anchor="middle" fill="${P.pillText}" font-size="8.2" font-weight="700" font-family="JetBrains Mono, monospace">${Math.round(seg.currentA)}A · ${seg.lengthM.toFixed(2)}m</text>
+            <text x="${pillCenterX}" y="${hbbY + 13}" text-anchor="middle" fill="${P.pillText}" font-size="8.2" font-weight="700" font-family="JetBrains Mono, monospace">${seg.currentA > 1 ? (seg.direction === 'right' ? '→ ' : '← ') : ''}${Math.round(seg.currentA)}A · ${seg.lengthM.toFixed(2)}m</text>
             <text x="${pillCenterX}" y="${hbbY + 23}" text-anchor="middle" fill="${color}" font-size="7.9" font-weight="600" font-family="JetBrains Mono, monospace">${seg.wPerMTotal.toFixed(0)} W/m</text>
           </g>
         `);

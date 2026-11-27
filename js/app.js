@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '2.8.0';
+  const APP_VERSION = '2.9.0';
 
   function loadInitialProject() {
     try {
@@ -535,22 +535,38 @@
     renderAll();
   }
 
-  function renderSortedTemplateOptions(selectedId) {
+  function getSortedDeviceCategories() {
     const sorted = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary);
+    return Array.from(new Set(sorted.map((t) => t.category || 'Other')));
+  }
+
+  function renderFilteredTemplateOptions(typeFilter, selectedId, includeKeepCustom) {
+    const sorted = window.SGCatalog.sortDeviceLibrary(project.deviceLibrary);
+    const filtered = typeFilter && typeFilter !== 'ALL'
+      ? sorted.filter((t) => (t.category || 'Other') === typeFilter)
+      : sorted;
     const groups = new Map();
-    sorted.forEach((t) => {
-      const grpKey = `${t.category || 'Other'} — ${t.manufacturer || 'Generic IEC'}${t.modelSeries ? ' (' + t.modelSeries + ')' : ''}`;
+    filtered.forEach((t) => {
+      const grpKey = typeFilter && typeFilter !== 'ALL'
+        ? `${t.manufacturer || 'Generic IEC'}${t.modelSeries ? ' — ' + t.modelSeries : ''}`
+        : `${t.category || 'Other'} — ${t.manufacturer || 'Generic IEC'}${t.modelSeries ? ' (' + t.modelSeries + ')' : ''}`;
       if (!groups.has(grpKey)) groups.set(grpKey, []);
       groups.get(grpKey).push(t);
     });
-    let html = '';
-    groups.forEach((items, label) => {
-      html += `<optgroup label="${esc(label)}">`;
-      items.forEach((t) => {
+    let html = includeKeepCustom ? '<option value="">— Select Model / Size to Apply —</option>' : '';
+    if (groups.size <= 1) {
+      filtered.forEach((t) => {
         html += `<option value="${esc(t.id)}" ${selectedId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`;
       });
-      html += `</optgroup>`;
-    });
+    } else {
+      groups.forEach((items, label) => {
+        html += `<optgroup label="${esc(label)}">`;
+        items.forEach((t) => {
+          html += `<option value="${esc(t.id)}" ${selectedId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`;
+        });
+        html += `</optgroup>`;
+      });
+    }
     return html;
   }
 
@@ -925,11 +941,17 @@
       <div class="insp-section">
         <div class="insp-section-title">Add Compartment / Interconnector / Spare</div>
         <div class="field">
-          ${lbl('Select Device / Starter / Spare Template (Sorted: Type → Mfg → Model → Size)', 'tier.template')}
-          <select id="col-add-tpl">
-            ${renderSortedTemplateOptions()}
+          ${lbl('1. Device / Starter Type', 'tier.template')}
+          <select id="col-add-type">
+            ${getSortedDeviceCategories().map((cat) => `<option value="${esc(cat)}" ${cat === 'DOL Starter' ? 'selected' : ''}>${esc(cat)}</option>`).join('')}
           </select>
-          <span class="field-hint">Sorted by Type → Manufacturer → Model Series → Size (A / kW)</span>
+        </div>
+        <div class="field">
+          ${lbl('2. Model & Size (Filtered by Type)', 'tier.template')}
+          <select id="col-add-tpl">
+            ${renderFilteredTemplateOptions('DOL Starter', 'dol-22kw', false)}
+          </select>
+          <span class="field-hint">Sorted by Manufacturer → Model Series → Size (A / kW)</span>
         </div>
         <div class="action-row">
           <button id="col-add-tier-btn" class="btn btn-sm btn-primary">+ Add Selected</button>
@@ -987,6 +1009,10 @@
       selection = { type: 'mainBusbar' };
       renderAll();
     });
+    document.getElementById('col-add-type').addEventListener('change', (e) => {
+      const tplSel = document.getElementById('col-add-tpl');
+      if (tplSel) tplSel.innerHTML = renderFilteredTemplateOptions(e.target.value, null, false);
+    });
     document.getElementById('col-add-tier-btn').addEventListener('click', () => {
       addTierToColumn(colIdx, document.getElementById('col-add-tpl').value);
     });
@@ -1043,14 +1069,21 @@
             <span class="field-hint">Typ: 200–350 DOL, 600 VSD</span>
           </div>
         </div>
-        <div class="field">
-          ${lbl(isSpacer ? 'Convert Spare/Placeholder to Equipment' : 'Apply Device / Starter Template (Sorted)', 'tier.template')}
-          <select id="t-template">
-            <option value="">— Keep Custom Settings —</option>
-            ${renderSortedTemplateOptions(tier.templateId)}
-          </select>
-          <span class="field-hint">Sorted by Type → Manufacturer → Model → Size (incl. 1250A IC ACB, full DOL/Star-Delta/VSD, Eaton 2A–1250A)</span>
+        <div class="form-grid">
+          <div class="field">
+            ${lbl('1. Device / Starter Type', 'tier.template')}
+            <select id="t-tpl-type">
+              ${getSortedDeviceCategories().map((cat) => `<option value="${esc(cat)}" ${(tier.category || 'DOL Starter') === cat ? 'selected' : ''}>${esc(cat)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            ${lbl('2. Model & Size (Filtered)', 'tier.template')}
+            <select id="t-template">
+              ${renderFilteredTemplateOptions(getSortedDeviceCategories().includes(tier.category) ? tier.category : getSortedDeviceCategories()[0], tier.templateId, true)}
+            </select>
+          </div>
         </div>
+        <span class="field-hint">Pick Type first to filter only matching models (e.g. ACB → 1250A Interconnector, DOL 0.75–55 kW, Eaton HRC 2A–1250A)</span>
         <div class="action-row">
           <button id="t-up" class="btn btn-sm btn-secondary" ${tierIdx === 0 ? 'disabled' : ''}>↑ Up</button>
           <button id="t-down" class="btn btn-sm btn-secondary" ${tierIdx === col.tiers.length - 1 ? 'disabled' : ''}>↓ Down</button>
@@ -1126,6 +1159,14 @@
                   <span class="field-hint">Typ: 600–1600 A (B-side load)</span>
                 </div>
               </div>
+              ${
+                (project.activeScenario === 'normal' || project.activeScenario === 'normal_future') && !(Number(tier.normalTransferCurrentA) > 0)
+                  ? `<div class="notice-box" style="padding:7px 9px;font-size:11px;margin:2px 0;">
+                      <strong>Active in N-1 Scenarios:</strong> Normal Transfer is <code>0 A</code> in the current <em>${project.activeScenario === 'normal' ? 'Normal (N)' : 'Normal + Future'}</em> view. Enter a Normal Transfer current above if normally carrying load, or switch to <strong>N-1 Firm Transfer</strong> to see its <strong>${Math.round(tier.n1TransferCurrentA || 850)} A</strong> heat &amp; busbar flow!
+                      <div style="margin-top:5px;"><button id="t-ic-switch-n1" class="btn btn-sm btn-primary">⚡ Switch to N-1 Firm Transfer</button></div>
+                    </div>`
+                  : ''
+              }
               <div class="insp-section-title" style="margin-top:6px;">Placement Relative to Incomer</div>
               <div class="action-row" style="margin-bottom:6px;">
                 <button id="t-ic-left" class="btn btn-sm btn-secondary" title="Place Interconnector in a column on the LEFT (other side) of the Incomer">← Left of Incomer</button>
@@ -1292,7 +1333,17 @@
     on('t-tag', 'change', (e) => { pushUndo(); tier.tag = e.target.value; renderAll(); });
     on('t-status', 'change', (e) => { pushUndo(); tier.status = e.target.value; renderAll(); });
     on('t-desc', 'change', (e) => { pushUndo(); tier.description = e.target.value; renderAll(); });
-    on('t-role', 'change', (e) => { pushUndo(); tier.role = e.target.value; renderAll(); });
+    on('t-role', 'change', (e) => {
+      pushUndo();
+      tier.role = e.target.value;
+      if (tier.role === 'interconnector') {
+        if (tier.n1TransferCurrentA == null) tier.n1TransferCurrentA = 850;
+        if (!col.verticalBusbar) {
+          col.verticalBusbar = Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' });
+        }
+      }
+      renderAll();
+    });
     on('t-height', 'change', (e) => { pushUndo(); tier.heightMm = Math.max(120, Number(e.target.value) || 250); renderAll(); });
     on('t-in', 'change', (e) => { pushUndo(); tier.ratedCurrentA = Math.max(1, Number(e.target.value) || 100); renderAll(); });
     on('t-pn', 'change', (e) => { pushUndo(); tier.ratedLossW = Math.max(0, Number(e.target.value) || 0); renderAll(); });
@@ -1306,6 +1357,11 @@
     on('t-ic-left', 'click', () => relocateInterconnector(colIdx, tierIdx, 'left_of_incomer'));
     on('t-ic-stack', 'click', () => relocateInterconnector(colIdx, tierIdx, 'stack_incomer'));
     on('t-ic-right', 'click', () => relocateInterconnector(colIdx, tierIdx, 'right_of_board'));
+    on('t-ic-switch-n1', 'click', () => { project.activeScenario = 'n1_transfer'; renderAll(); });
+    on('t-tpl-type', 'change', (e) => {
+      const tplSel = document.getElementById('t-template');
+      if (tplSel) tplSel.innerHTML = renderFilteredTemplateOptions(e.target.value, tier.templateId, true);
+    });
     on('t-source-ref', 'change', (e) => { pushUndo(); tier.sourceRef = e.target.value; window.SGState.saveProject(project); });
     on('t-source-url', 'change', (e) => { pushUndo(); tier.sourceUrl = e.target.value.trim(); renderAll(true); });
     on('t-cable-en', 'change', (e) => {
@@ -1346,6 +1402,12 @@
       if (c.defaultKw) {
         tier.loadInputMode = 'kw';
         tier.loadKw = c.defaultKw;
+      }
+      if (tier.role === 'interconnector') {
+        if (tier.n1TransferCurrentA == null) tier.n1TransferCurrentA = 850;
+        if (!col.verticalBusbar) {
+          col.verticalBusbar = Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' });
+        }
       }
       renderAll();
     });
@@ -1777,10 +1839,10 @@
                   <td><input type="text" data-lib-idx="${idx}" data-lib-field="manufacturer" value="${esc(t.manufacturer || 'Generic IEC')}" style="width:105px;" /></td>
                   <td><input type="text" data-lib-idx="${idx}" data-lib-field="modelSeries" value="${esc(t.modelSeries || '')}" style="width:140px;" /></td>
                   <td><input type="text" data-lib-idx="${idx}" data-lib-field="name" value="${esc(t.name)}" style="width:235px;" /></td>
-                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedCurrentA" value="${t.ratedCurrentA}" style="width:62px;" /></td>
-                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedLossW" value="${t.ratedLossW}" style="width:64px;" /></td>
-                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="fixedLossW" value="${t.fixedLossW || 0}" style="width:54px;" /></td>
-                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="defaultHeightMm" value="${t.defaultHeightMm || 250}" style="width:58px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedCurrentA" value="${t.ratedCurrentA}" style="width:88px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="ratedLossW" value="${t.ratedLossW}" style="width:92px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="fixedLossW" value="${t.fixedLossW || 0}" style="width:82px;" /></td>
+                  <td class="num"><input type="number" data-lib-idx="${idx}" data-lib-field="defaultHeightMm" value="${t.defaultHeightMm || 250}" style="width:86px;" /></td>
                   <td>
                     <div style="display:flex;gap:4px;align-items:center;">
                       <input type="url" data-lib-idx="${idx}" data-lib-field="sourceUrl" value="${esc(t.sourceUrl || '')}" placeholder="https://… (optional)" title="${esc(t.sourceRef || 'Optional datasheet / standard evidence URL')}" style="width:145px;" />

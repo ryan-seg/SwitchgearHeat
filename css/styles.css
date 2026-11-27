@@ -1086,11 +1086,12 @@ input:focus, select:focus, textarea:focus {
   border: 1.5px solid var(--accent);
   color: var(--text-0);
   border-radius: 5px;
-  padding: 3px 7px;
+  padding: 3px 4px 3px 7px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
-  width: 105px;
+  width: 124px;
+  font-variant-numeric: tabular-nums;
 }
 
 select.explain-inline-input {
@@ -1116,7 +1117,7 @@ select.explain-inline-input {
 
 /* Right Inspector Panel */
 .inspector-panel {
-  width: 375px;
+  width: 420px;
   flex-shrink: 0;
   background: var(--bg-1);
   border-left: 1px solid var(--border);
@@ -1210,6 +1211,22 @@ select.explain-inline-input {
 
 .field input, .field select, .field textarea {
   width: 100%;
+  min-width: 0;
+}
+
+input[type="number"] {
+  padding-right: 3px;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
+.form-grid-3 .field {
+  min-width: 0;
+}
+
+.form-grid-3 .field input[type="number"] {
+  padding: 5px 3px 5px 7px;
+  min-width: 78px;
 }
 
 .calc-readout {
@@ -1246,14 +1263,14 @@ select.explain-inline-input {
 
 .subcomp-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px 46px 44px 22px;
-  gap: 4px;
+  grid-template-columns: minmax(90px, 1fr) 74px 74px 66px 24px;
+  gap: 5px;
   align-items: center;
   font-size: 11px;
 }
 
 .subcomp-row input {
-  padding: 3px 4px;
+  padding: 4px 3px 4px 5px;
   font-size: 11px;
   min-width: 0;
   width: 100%;

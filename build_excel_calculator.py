@@ -991,7 +991,7 @@ def generate_workbook():
             is_on = f"IF(E{r}=\"Interconnector\",{iop_ref}>0,IF(E{r}=\"Spare / Placeholder\",Q{r}>0,{active_expr}))"
             loss_mod = f"IFERROR(INDEX({lib_mod_rng},MATCH(G{r},{lib_name_rng},0)),\"quadratic\")"
             var_part = f"IF({loss_mod}=\"vsd\",P{r}*(0.25+0.75*(({iop_ref})/MAX(1,O{r}))),P{r}*((({iop_ref})/MAX(1,O{r}))^2))"
-            vbb_rac_expr = f"IF(IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"VBB-Std\")=\"VBB-Heavy\",'02_Board_&_Busbars'!$D$60,'02_Board_&_Busbars'!$C$60)"
+            vbb_rac_expr = f"IF(OR(IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"VBB-Std\")=\"VBB-Heavy\",AND(E{r}=\"Interconnector\",IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"None\")=\"None\")),'02_Board_&_Busbars'!$D$60,'02_Board_&_Busbars'!$C$60)"
             takeoff_part = (
                 f"IF(E{r}=\"Incomer\",3*(({iop_ref})^2)*'02_Board_&_Busbars'!$B$60*0.000001*0.6 + 6*(({iop_ref})^2)*'02_Board_&_Busbars'!$B$23*0.000001,"
                 f"IF(OR(E{r}=\"Feeder\",E{r}=\"Interconnector\"),3*(({iop_ref})^2)*{vbb_rac_expr}*0.000001*'02_Board_&_Busbars'!$B$22 + 3*(({iop_ref})^2)*'02_Board_&_Busbars'!$B$23*0.000001,0))"
@@ -1001,7 +1001,7 @@ def generate_workbook():
 
         is_act_now = f"IF(E{r}=\"Interconnector\",S{r}>0,IF(E{r}=\"Spare / Placeholder\",Q{r}>0,OR(F{r}=\"Active\",AND(F{r}=\"Future\",OR('01_Summary'!$C$9=\"Normal + Future\",'01_Summary'!$C$9=\"Worst-Case (N-1 + Future)\")))))"
         loss_mod = f"IFERROR(INDEX({lib_mod_rng},MATCH(G{r},{lib_name_rng},0)),\"quadratic\")"
-        vbb_rac = f"IF(IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"VBB-Std\")=\"VBB-Heavy\",'02_Board_&_Busbars'!$D$60,'02_Board_&_Busbars'!$C$60)"
+        vbb_rac = f"IF(OR(IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"VBB-Std\")=\"VBB-Heavy\",AND(E{r}=\"Interconnector\",IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"None\")=\"None\")),'02_Board_&_Busbars'!$D$60,'02_Board_&_Busbars'!$C$60)"
 
         ws_fed.cell(r, 21, f"=IF(A{r}=\"\",0,IF({is_act_now},Q{r},0))").number_format = "#,##0.0"
         ws_fed.cell(r, 22, f"=IF(A{r}=\"\",0,IF({is_act_now},IF({loss_mod}=\"vsd\",P{r}*(0.25+0.75*(S{r}/MAX(1,O{r}))),P{r}*T{r}),0))").number_format = "#,##0.0"
@@ -1155,7 +1155,7 @@ def generate_workbook():
             f"=IF(NOT({is_vbb_tier}),0,IF({has_prev_vbb}=0,ABS(('02_Board_&_Busbars'!$B$18-IF('02_Board_&_Busbars'!$B$21=\"Top\",'02_Board_&_Busbars'!$B$20/2,'02_Board_&_Busbars'!$B$18-'02_Board_&_Busbars'!$B$20/2))-D{r})/1000,"
             f"(('03_Feeder_Schedule'!H{fr}/2)+SUMIFS('03_Feeder_Schedule'!$H${FEED_START}:$H${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},B{r}-1)/2)/1000))"
         ).number_format = "0.00"
-        ws_seg.cell(r, 6, f"=IF(A{r}=\"\",\"\",IFERROR(INDEX('03_Feeder_Schedule'!$D${COL_START}:$D${COL_END},MATCH(A{r},'03_Feeder_Schedule'!$A${COL_START}:$A${COL_END},0)),\"VBB-Std\"))").alignment = ALIGN_C
+        ws_seg.cell(r, 6, f"=IF(A{r}=\"\",\"\",IF(IFERROR(INDEX('03_Feeder_Schedule'!$D${COL_START}:$D${COL_END},MATCH(A{r},'03_Feeder_Schedule'!$A${COL_START}:$A${COL_END},0)),\"None\")=\"None\",IF('03_Feeder_Schedule'!E{fr}=\"Interconnector\",\"VBB-Heavy\",\"VBB-Std\"),INDEX('03_Feeder_Schedule'!$D${COL_START}:$D${COL_END},MATCH(A{r},'03_Feeder_Schedule'!$A${COL_START}:$A${COL_END},0))))").alignment = ALIGN_C
         ws_seg.cell(r, 7, f"=IF(F{r}=\"VBB-Heavy\",'02_Board_&_Busbars'!$D$60,IF(F{r}=\"VBB-Std\",'02_Board_&_Busbars'!$C$60,0))").number_format = "0.00"
         ws_seg.cell(r, 8,
             f"=IF(A{r}=\"\",0,SUMIFS('03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END},'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END},A{r},'03_Feeder_Schedule'!$B${FEED_START}:$B${FEED_END},\">=\"&B{r},'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END},\"Feeder\")*'02_Board_&_Busbars'!$B$16"
@@ -1831,7 +1831,7 @@ def generate_workbook():
     try:
         wb.save(final_path)
     except PermissionError:
-        final_path = OUTPUT_PATH.replace(".xlsx", "_v2.8.xlsx")
+        final_path = OUTPUT_PATH.replace(".xlsx", "_v2.9.xlsx")
         wb.save(final_path)
         print(f"NOTE: Original file is open in Excel; saved updated workbook to: {final_path}")
 

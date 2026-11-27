@@ -1,5 +1,5 @@
 {
-  "version": "2.8.0",
+  "version": "2.9.0",
   "released": "2026-11-27",
-  "notes": "Direct Website Export into the 10-sheet macro-free protected Excel workbook (.xlsx) with Live SLD & GA Heat Maps; Excel locked so ONLY blue entry cells are selectable; Duty/Standby pump guidance added."
+  "notes": "Two-step cascading Device Type -> Model/Size dropdowns; widened numeric inputs so values never clip behind up/down spinners; full Interconnector left-of-incomer VBB/HBB calculation & N-1 indicator in both Web App and Excel."
 }

@@ -1049,8 +1049,8 @@ window.SGPhysics = (function () {
     const dolTpl = findTpl(sm.dolTemplateId || 'dol-37kw');
     const vsdTpl = findTpl(sm.vsdTemplateId || 'vsd-45kw');
     const fdrTpl = findTpl(sm.feederTemplateId || 'mccb-250');
-    const incTpl = findTpl(bbPreset.ratedCurrentA >= 2500 ? 'acb-2500' : 'acb-1600');
-    const icTpl  = findTpl('interconn-1600');
+    const incTpl = findTpl(bbPreset.ratedCurrentA >= 2500 ? 'acb-2500' : bbPreset.ratedCurrentA >= 1600 ? 'acb-1600' : 'acb-1250');
+    const icTpl  = findTpl(bbPreset.ratedCurrentA <= 1250 ? 'interconn-1250' : 'interconn-1600');
 
     const nDol = Math.max(0, parseInt(sm.dolCount, 10) || 0);
     const nVsd = Math.max(0, parseInt(sm.vsdCount, 10) || 0);
