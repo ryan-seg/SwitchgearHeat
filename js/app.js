@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '2.7.1';
+  const APP_VERSION = '2.8.0';
 
   function loadInitialProject() {
     try {
@@ -1015,11 +1015,11 @@
           <div class="field">
             ${lbl('Status', 'tier.status')}
             <select id="t-status">
-              <option value="active" ${tier.status === 'active' ? 'selected' : ''}>Active (Running)</option>
+              <option value="active" ${tier.status === 'active' ? 'selected' : ''}>Active (Running / Duty)</option>
               <option value="future" ${tier.status === 'future' ? 'selected' : ''}>Future Capacity</option>
-              <option value="standby" ${tier.status === 'standby' ? 'selected' : ''}>Standby / Off</option>
+              <option value="standby" ${tier.status === 'standby' ? 'selected' : ''}>Standby / Off (Duty-Standby Spare)</option>
             </select>
-            <span class="field-hint">Controls scenario activation</span>
+            <span class="field-hint">Use Standby for 1oo2 / 3oo4 spare pumps (0 W)</span>
           </div>
           <div class="field full">
             ${lbl('Description', 'tier.desc')}
@@ -2202,6 +2202,7 @@
         <div class="canvas-toolbar">
           <div class="toolbar-group">
             <button id="rep-btn-print" class="btn btn-sm btn-primary">🖨 Print / Save PDF</button>
+            <button id="rep-btn-dl-xlsx" class="btn btn-sm btn-primary">📊 Download Excel (.xlsx)</button>
             <button id="rep-btn-copy" class="btn btn-sm btn-secondary">📋 Copy ${rcfg.outputFormat === 'markdown' ? 'Markdown' : 'Text Summary'}</button>
             <button id="rep-btn-dl-html" class="btn btn-sm btn-secondary">⬇ Download HTML</button>
             <button id="rep-btn-dl-txt" class="btn btn-sm btn-secondary">⬇ Download .txt</button>
@@ -2252,6 +2253,7 @@
 
     // Bind Export / Print / Copy Actions
     document.getElementById('rep-btn-print').addEventListener('click', () => triggerConfiguredPrint(evalRes, allScenarios));
+    document.getElementById('rep-btn-dl-xlsx').addEventListener('click', () => triggerExcelWorkbookExport(document.getElementById('rep-btn-dl-xlsx')));
     document.getElementById('rep-btn-copy').addEventListener('click', () => {
       const btn = document.getElementById('rep-btn-copy');
       const txt = window.SGReport.buildTextOrMarkdownReport(project, evalRes, allScenarios, rcfg.outputFormat === 'markdown');
@@ -2807,6 +2809,25 @@
         alert('Could not create share link: ' + err.message);
       }
     });
+
+    async function triggerExcelWorkbookExport(btnEl) {
+      const orig = btnEl ? btnEl.textContent : '';
+      try {
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = '⏳ Building .xlsx…'; }
+        await window.SGXlsxExport.exportExcelWorkbook(project);
+        if (btnEl) {
+          btnEl.textContent = '✓ Excel Exported!';
+          setTimeout(() => { btnEl.textContent = orig; btnEl.disabled = false; }, 2200);
+        }
+      } catch (err) {
+        console.error('Excel export failed:', err);
+        alert('Excel workbook export failed: ' + err.message);
+        if (btnEl) { btnEl.textContent = orig; btnEl.disabled = false; }
+      }
+    }
+
+    const btnXlsx = document.getElementById('btn-export-xlsx');
+    if (btnXlsx) btnXlsx.addEventListener('click', () => triggerExcelWorkbookExport(btnXlsx));
 
     document.getElementById('btn-export-csv').addEventListener('click', () => {
       const allScenarios = window.SGPhysics.evaluateAllScenarios(project);

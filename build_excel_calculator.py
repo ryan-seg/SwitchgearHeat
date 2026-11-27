@@ -122,27 +122,36 @@ def configure_print(ws, landscape=True, fit_width=1, fit_height=0, repeat_rows=N
 
 def apply_sheet_protection(ws, strict_calc_sheet=False):
     """
-    Protects formulas on every sheet while leaving blue input cells unlocked.
-    On strict_calc_sheet (04_Busbar_Segments & 05_GA_Heat_Map), formulas are ALSO
-    hidden and locked cells cannot be selected/copied (preventing copying & tampering).
+    Protects ALL sheets so ONLY areas requiring user entry (blue FILL_INPUT cells)
+    are selectable and editable! All non-input cells (labels, headers, formulas,
+    diagrams) are locked with formulas hidden and cannot be selected or copied.
     """
+    unlocked_coords = set()
+    if not strict_calc_sheet:
+        for row in ws.iter_rows():
+            for cell in row:
+                if cell.fill and cell.fill.fgColor and cell.fill.fgColor.rgb and cell.fill.fgColor.rgb.endswith(INPUT_BG):
+                    unlocked_coords.add((cell.row, cell.column))
+        # Ensure ALL cells inside any merged input range are also unlocked so Excel lets users click them
+        for mrange in ws.merged_cells.ranges:
+            if (mrange.min_row, mrange.min_col) in unlocked_coords:
+                for rr in range(mrange.min_row, mrange.max_row + 1):
+                    for cc in range(mrange.min_col, mrange.max_col + 1):
+                        unlocked_coords.add((rr, cc))
+
     for row in ws.iter_rows():
         for cell in row:
-            if strict_calc_sheet:
-                cell.protection = PROT_LOCKED_HIDDEN
+            if (cell.row, cell.column) in unlocked_coords:
+                cell.protection = PROT_UNLOCKED
             else:
-                # Blue input cells (FILL_INPUT) remain unlocked; everything else locked
-                if cell.fill and cell.fill.fgColor and cell.fill.fgColor.rgb and cell.fill.fgColor.rgb.endswith(INPUT_BG):
-                    cell.protection = PROT_UNLOCKED
-                else:
-                    cell.protection = PROT_LOCKED_VISIBLE
+                cell.protection = PROT_LOCKED_HIDDEN
 
     ws.protection.sheet = True
     ws.protection.set_password(PROTECT_PASSWORD)
-    # Note: In OOXML / openpyxl SheetProtection, True = PROHIBITED (protected), False = ALLOWED.
-    ws.protection.selectUnlockedCells = False            # Allow selecting blue input cells
-    ws.protection.selectLockedCells = strict_calc_sheet  # Prohibit selecting/copying locked cells on strict calc sheets
-    ws.protection.formatCells = True                     # Prohibit changing cell formatting
+    # In OOXML / openpyxl SheetProtection: True = PROHIBITED (protected), False = ALLOWED.
+    ws.protection.selectUnlockedCells = False   # Allow selecting ONLY unlocked blue input areas
+    ws.protection.selectLockedCells = True      # Prohibit selecting locked cells on EVERY sheet!
+    ws.protection.formatCells = True
     ws.protection.formatColumns = True
     ws.protection.formatRows = True
     ws.protection.insertRows = True
@@ -1749,10 +1758,11 @@ def generate_workbook():
     )
 
     help_sections = [
-        ("1. QUICK-START GUIDE & WORKBOOK PROTECTION", [
-            ("Blue Cells = User Inputs", "All editable inputs across sheets 00, 01, 02, 03, 06, and 07 are shaded light blue and unlocked. All formula cells are locked to prevent accidental corruption."),
+        ("1. QUICK-START GUIDE, WORKBOOK PROTECTION & DUTY/STANDBY PUMPS", [
+            ("Only Blue Cells Selectable", "Sheet Protection is active across ALL 10 sheets with 'Select Locked Cells' disabled: ONLY light-blue editable input cells can be selected or modified. All formulas, calculation tables, and live SLD/GA heat maps are hidden and locked against tampering or copying. Authorized admins can unlock via Review → Unprotect Sheet (password: CEI)."),
             ("Simple Mode vs Detailed Mode", "Start on '00_Simple_Mode' for a 30-second preliminary estimate. Switch '01_Summary' cell C8 to 'Detailed Mode' to refine individual cubicles, starters, Eaton HRC fuses, and busbar spans—Detailed Mode automatically inherits your Simple Mode Busbar Preset, AC Factor S, RDF, Future Growth, and N-1 Transfer when '02_Board_&_Busbars' cell B9 = 'Yes'."),
-            ("Protected Calculation Sheet", "Tab '04_Busbar_Segments' (and '05_GA_Heat_Map') has Sheet Protection enabled with formulas hidden and locked cells unselectable to prevent unauthorized tampering or copying. Authorized reviewers can unprotect via Review → Unprotect Sheet (default admin password: CEI)."),
+            ("Duty / Standby Pumps (1oo2, 3oo4)", "For redundant Duty/Standby sets (e.g., 1oo2 or 3oo4 pumps), ALWAYS set the standby pump(s) Status = 'Standby' — do NOT leave Status = 'Active' with Duty Factor = 0. Setting Status = 'Standby' zeroes both variable Joule heat and fixed coil/fan/VSD standby heat while keeping nameplate kW documented and reserving physical GA compartment height!"),
+            ("Live SLD & GA Heat Maps", "Tabs '05a_Live_SLD_HeatMap' and '05b_Live_GA_HeatMap' update automatically from '03_Feeder_Schedule' and '01_Summary' Active Scenario, colour-coded by live heat output (W and W/m)."),
             ("Data Privacy Advisory", "This workbook is 100% macro-free and runs strictly locally on your computer. Do not distribute files containing security-classified or client-restricted site identifiers."),
         ]),
         ("2. BUSBAR JOULE'S LAW PHYSICS (DC → AC CONVERSION)", [
@@ -1821,12 +1831,23 @@ def generate_workbook():
     try:
         wb.save(final_path)
     except PermissionError:
-        final_path = OUTPUT_PATH.replace(".xlsx", "_v2.7.xlsx")
+        final_path = OUTPUT_PATH.replace(".xlsx", "_v2.8.xlsx")
         wb.save(final_path)
         print(f"NOTE: Original file is open in Excel; saved updated workbook to: {final_path}")
+
+    # Also embed the freshly built workbook into the Web App as a base64 JS template
+    # so the Website's "Export to Excel (.xlsx)" exports directly into this exact protected workbook (even offline!)
+    import base64
+    tpl_js_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "js", "xlsx-template-data.js")
+    with open(final_path, "rb") as xf:
+        b64_str = base64.b64encode(xf.read()).decode("ascii")
+    with open(tpl_js_path, "w", encoding="utf-8") as jf:
+        jf.write("/* Auto-generated embedded macro-free Excel template (10 sheets, protected, only entry cells selectable) */\n")
+        jf.write(f'window.SGXlsxTemplateB64 = "{b64_str}";\n')
     print(f"SUCCESS: Generated macro-free protected Excel workbook at: {final_path}")
+    print(f"SUCCESS: Embedded Excel template into web app: {tpl_js_path} ({len(b64_str):,} b64 chars)")
     print(f"Sheets ({len(wb.sheetnames)}): {wb.sheetnames}")
-    print(f"Protection enabled on all sheets (Strict hidden+uncopyable on 04_Busbar_Segments, 05a_Live_SLD_HeatMap & 05b_Live_GA_HeatMap; password: {PROTECT_PASSWORD})")
+    print(f"Protection enabled on ALL 10 sheets (ONLY blue entry cells selectable; formulas hidden; password: {PROTECT_PASSWORD})")
 
 
 if __name__ == "__main__":

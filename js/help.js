@@ -148,10 +148,10 @@ window.SGHelp = (function () {
     },
     'tier.status': {
       title: 'Operating Status (Active / Future / Standby)',
-      what: 'Controls which operating scenarios energize this circuit and include its load and heat output.',
+      what: 'Controls which operating scenarios energize this circuit and include its load and heat output. For Duty/Standby pump sets (1oo2, 2oo3, 3oo4), ALWAYS set the standby pump(s) to "Standby / Off" — do NOT leave them Active with Duty Factor = 0.',
       where: 'Plant duty/standby operating philosophy and future expansion allowance.',
-      typical: 'Active = running in Normal and all scenarios · Future = energized only in "Normal + Future" & "Worst-Case" · Standby = installed spare (0 W).',
-      tip: 'Mark planned expansion circuits as "Future" to compare Day-1 vs Future Capacity kilowatts (kW) instantly.',
+      typical: '1oo2 Pumps: 1 Active + 1 Standby · 3oo4 Pumps: 3 Active + 1 Standby · Future = energized only in "Normal + Future" & "Worst-Case".',
+      tip: 'Setting Status = Standby zeroes BOTH variable I²R heat AND fixed coil/fan/VSD standby heat while keeping nameplate kW documented and reserving physical GA height!',
     },
     'tier.desc': {
       title: 'Circuit Description',
@@ -246,10 +246,10 @@ window.SGHelp = (function () {
     },
     'tier.loadFactor': {
       title: 'Duty / Load Utilisation Factor',
-      what: 'Ratio of actual average running load to nameplate Kilowatts (kW) or base current (for example, a 55 kW pump absorbing 48 kW shaft power has a 0.87 load factor).',
+      what: 'Ratio of actual average running load to nameplate Kilowatts (kW) or base current for an ACTIVE running motor (for example, a 55 kW pump absorbing 48 kW shaft power has a 0.87 load factor). Do NOT set to 0 for standby pumps — use Status = "Standby / Off" instead!',
       where: 'Process datasheet (absorbed kW vs rated motor kW) or operational profile.',
       typical: '0.80–0.90 for industrial pumps/fans/compressors; 1.00 for continuous full-load or conservative worst-case.',
-      tip: 'Because resistive heat scales with Iop², running at 80% load cuts variable I²R losses by 36%!',
+      tip: 'Leaving Status = Active with Duty = 0 still charges fixed contactor coil & VSD idle switching losses (~12–400 W). Use Status = Standby for off-duty pumps!',
     },
     'tier.kw': {
       title: 'Rated / Absorbed Load Power in Kilowatts (kW)',

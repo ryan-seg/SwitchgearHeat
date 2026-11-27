@@ -1,5 +1,5 @@
 {
-  "version": "2.7.1",
+  "version": "2.8.0",
   "released": "2026-11-27",
-  "notes": "Updated 1250A busbar preset to 2 x 75 x 6 mm Cu (900 mm2/phase) per BS EN 60439-1 Type 439 enclosed rating across both Web App and Excel."
+  "notes": "Direct Website Export into the 10-sheet macro-free protected Excel workbook (.xlsx) with Live SLD & GA Heat Maps; Excel locked so ONLY blue entry cells are selectable; Duty/Standby pump guidance added."
 }

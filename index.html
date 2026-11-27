@@ -9,9 +9,9 @@
   <meta name="description" content="IEC 60439 / 61439 LV Switchgear Thermal & Heat Loss Calculator with Joule busbar physics, Eaton HRC fuses, interactive SLD, General Arrangement, and step-by-step calculation breakdown." />
   <meta name="theme-color" content="#0b1120" />
   <title>Switchgear Heat Loss Calculator — IEC 60439 / 61439</title>
-  <link rel="icon" href="./favicon.svg?v=2.7.1" type="image/svg+xml" />
-  <link rel="manifest" href="./manifest.json?v=2.7.1" />
-  <link rel="stylesheet" href="./css/styles.css?v=2.7.1" />
+  <link rel="icon" href="./favicon.svg?v=2.8.0" type="image/svg+xml" />
+  <link rel="manifest" href="./manifest.json?v=2.8.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=2.8.0" />
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -20,7 +20,7 @@
       <div class="topbar-brand">
         <div class="brand-badge">⚡</div>
         <div>
-          <h1 class="brand-title">Switchgear Thermal &amp; Heat Loss Calculator <span id="app-version-badge" class="version-pill">v2.7.1</span></h1>
+          <h1 class="brand-title">Switchgear Thermal &amp; Heat Loss Calculator <span id="app-version-badge" class="version-pill">v2.8.0</span></h1>
           <div class="brand-sub">IEC 60439 / 61439 · Simple &amp; Detailed Modes · Joule Busbars · Eaton HRC Fuses · Room Cooling</div>
         </div>
       </div>
@@ -48,8 +48,9 @@
         <button id="btn-load-json" class="btn btn-secondary" title="Load project from JSON">Load JSON</button>
         <input id="file-load-json" type="file" accept=".json" style="display:none" />
         <button id="btn-share-link" class="btn btn-secondary" title="Copy shareable web URL containing this switchboard">Share Link</button>
-        <button id="btn-export-csv" class="btn btn-secondary" title="Export full schedules to CSV (Excel)">Export CSV</button>
-        <button id="btn-print-report" class="btn btn-primary" title="Print or Save Engineering Report as PDF">Print / PDF Report</button>
+        <button id="btn-export-xlsx" class="btn btn-primary" title="Export live project directly into the 10-sheet macro-free protected Excel workbook (.xlsx) with Live SLD & GA Heat Maps">📊 Export Excel (.xlsx)</button>
+        <button id="btn-export-csv" class="btn btn-secondary" title="Export flat CSV table">CSV</button>
+        <button id="btn-print-report" class="btn btn-secondary" title="Print or Save Engineering Report as PDF">Print / PDF</button>
       </div>
     </header>
 
@@ -172,7 +173,7 @@
         <button id="btn-privacy-footer" class="footer-link">Read full data &amp; storage notice</button>
       </div>
       <div class="footer-right">
-        <span id="update-status" class="update-status">v2.7.1 · Up to date</span>
+        <span id="update-status" class="update-status">v2.8.0 · Up to date</span>
       </div>
     </footer>
 
@@ -180,14 +181,16 @@
     <div id="print-report" class="print-only"></div>
   </div>
 
-  <script src="./js/physics.js?v=2.7.1"></script>
-  <script src="./js/catalog.js?v=2.7.1"></script>
-  <script src="./js/state.js?v=2.7.1"></script>
-  <script src="./js/sld.js?v=2.7.1"></script>
-  <script src="./js/ga.js?v=2.7.1"></script>
-  <script src="./js/explain.js?v=2.7.1"></script>
-  <script src="./js/help.js?v=2.7.1"></script>
-  <script src="./js/report.js?v=2.7.1"></script>
-  <script src="./js/app.js?v=2.7.1"></script>
+  <script src="./js/physics.js?v=2.8.0"></script>
+  <script src="./js/catalog.js?v=2.8.0"></script>
+  <script src="./js/state.js?v=2.8.0"></script>
+  <script src="./js/sld.js?v=2.8.0"></script>
+  <script src="./js/ga.js?v=2.8.0"></script>
+  <script src="./js/explain.js?v=2.8.0"></script>
+  <script src="./js/help.js?v=2.8.0"></script>
+  <script src="./js/report.js?v=2.8.0"></script>
+  <script src="./js/xlsx-template-data.js?v=2.8.0"></script>
+  <script src="./js/xlsx-export.js?v=2.8.0"></script>
+  <script src="./js/app.js?v=2.8.0"></script>
 </body>
 </html>
