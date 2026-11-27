@@ -436,8 +436,8 @@ window.SGState = (function () {
           widthMm: 800,
           verticalBusbar: {
             label: 'COL-05 Interconnector Riser',
-            ratedCurrentA: 1600,
-            certRef: 'Type 439 Dropper — 2×75×6mm',
+            ratedCurrentA: 1250,
+            certRef: 'Type 439 Dropper — 2×75×6mm (1250A)',
             material: 'cu_100',
             barsPerPhase: 2,
             widthMm: 75,
@@ -453,14 +453,14 @@ window.SGState = (function () {
           },
           tiers: [
             makeTierFromTemplate(
-              'interconn-1600',
+              'interconn-1250',
               {
                 id: 'tier-5-1',
                 tag: 'IC-AB',
-                description: 'Interconnector to MSB-B (Firm Supply Link)',
+                description: 'Interconnector to MSB-B (1250A ACB Firm Supply)',
                 role: 'interconnector',
                 status: 'active',
-                heightMm: 850,
+                heightMm: 740,
                 normalTransferCurrentA: 0,
                 n1TransferCurrentA: 850,
                 remoteBoardName: 'MSB-B (Firm Supply)',
@@ -945,6 +945,7 @@ window.SGState = (function () {
         deviceSchedule: true,
         deviceSubComponents: true,
         enclosureAdvisory: true,
+        roomVentilation: true,
         methodologyAppendix: true,
         signOffBlock: true,
       };
@@ -967,6 +968,7 @@ window.SGState = (function () {
         deviceSchedule: true,
         deviceSubComponents: false,
         enclosureAdvisory: false,
+        roomVentilation: false,
         methodologyAppendix: false,
         signOffBlock: false,
       };

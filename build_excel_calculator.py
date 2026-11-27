@@ -2,14 +2,15 @@
 Generates a 100% macro-free, live-formula Excel workbook (.xlsx) for
 Switchgear Thermal, Heat Loss & Switchroom Cooling Calculation (IEC 60439 / 61439).
 
-Sheets (9 tabs, zero macros):
+Sheets (10 tabs, zero macros):
   00_Simple_Mode           - Rapid crude assessment (few inputs) feeding Detailed Mode defaults
-  01_Summary               - Executive Dashboard, Simple/Detailed Switch, 4-Scenario Table & Chart
+  01_Summary               - Executive Dashboard, Simple/Detailed Switch, Design Check, 4-Scenario Table & Chart
   02_Board_&_Busbars       - System Config, Material Table, Main HBB & Vertical Busbar Joule Physics
   03_Feeder_Schedule       - Columns + Multi-Tier Starters, Eaton HRC Fuses (2A-1250A) & Interconnector
   04_Busbar_Segments       - PROTECTED Calculation Engine (formulas hidden & uncopyable; password: CEI)
-  05_GA_Heat_Map           - PROTECTED Visual Block General Arrangement Elevation w/ Thermal Heatmap
-  06_Device_&_Fuse_Library - Editable IEC & Eaton Bussmann NH gG HRC Fuse (2A-1250A) Catalog
+  05a_Live_SLD_HeatMap     - PROTECTED Live Single Line Diagram w/ Dynamic Arrangement & Heat Map
+  05b_Live_GA_HeatMap      - PROTECTED Live General Arrangement Elevation w/ Thermal Heat Map
+  06_Device_&_Fuse_Library - Sorted IEC & Eaton Bussmann NH gG HRC Fuse (2A-1250A) Catalog w/ Evidence URLs
   07_Room_Ventilation      - Switchroom Size (e.g. 5x5x9m), Airflow, ACH & Natural vs Mechanical Verdict
   08_Calc_Help_&_Method    - Full Calculation Methodology, Worked Examples & Abbreviation Glossary
 """
@@ -20,7 +21,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, Protecti
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.comments import Comment
-from openpyxl.formatting.rule import ColorScaleRule, CellIsRule
+from openpyxl.formatting.rule import ColorScaleRule, CellIsRule, FormulaRule
 from openpyxl.chart import BarChart, Reference
 
 OUTPUT_PATH = r"g:\My Drive\Personal & Life\Projects\CE&I\Switchgear_Heat_Loss_Calculator.xlsx"
@@ -893,7 +894,7 @@ def generate_workbook():
         ws_fed.cell(r, 8, f"=SUMIFS($S${FEED_START}:$S${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Interconnector\")").number_format = "#,##0.0"
         ws_fed.cell(r, 9,
             f"=IF(COUNTIFS($A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")>0,"
-            f"(SUM($G${COL_START}:$G${COL_END})+SUM($H${COL_START}:$H${COL_END}))/MAX(1,COUNTIFS($E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")),0)"
+            f"COUNTIFS($A${FEED_START}:$A${FEED_END},A{r},$E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")*(SUM($G${COL_START}:$G${COL_END})+SUM($H${COL_START}:$H${COL_END}))/MAX(1,COUNTIFS($E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")),0)"
         ).number_format = "#,##0.0"
         ws_fed.cell(r, 10, f"=SUMIFS($Y${FEED_START}:$Y${FEED_END},$A${FEED_START}:$A${FEED_END},A{r})").number_format = "#,##0.0"
         ws_fed.cell(r, 11, f"=SUMIFS('04_Busbar_Segments'!$L$18:$L$52,'04_Busbar_Segments'!$A$18:$A$52,A{r})").number_format = "#,##0.0"
@@ -971,11 +972,12 @@ def generate_workbook():
             f"+SUMIFS($H${FEED_START}:$H${FEED_END},$A${FEED_START}:$A${FEED_END},A{r},$B${FEED_START}:$B${FEED_END},\"<\"&B{r})+H{r}/2))"
         ).number_format = "#,##0"
 
+        has_act_inc = f"COUNTIFS($E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")>0"
         base_feeder_i = f"IF(I{r}=\"kW\",(J{r}*1000)/(SQRT(3)*'02_Board_&_Busbars'!$B$12*MAX(0.1,L{r})*MAX(0.1,M{r})),J{r})*IF(N{r}=\"\",1,N{r})"
-        ws_fed.cell(r, 30, f"=IF(A{r}=\"\",0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",IF(F{r}=\"Active\",J{r},0),IF(F{r}=\"Active\",{base_feeder_i},0))))").number_format = "#,##0.0"
-        ws_fed.cell(r, 31, f"=IF(A{r}=\"\",0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",K{r},IF(F{r}=\"Active\",{base_feeder_i},0))))").number_format = "#,##0.0"
-        ws_fed.cell(r, 32, f"=IF(A{r}=\"\",0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",IF(F{r}=\"Active\",J{r},0),IF(F{r}=\"Active\",({base_feeder_i})*(1+'02_Board_&_Busbars'!$B$17),IF(F{r}=\"Future\",{base_feeder_i},0)))))").number_format = "#,##0.0"
-        ws_fed.cell(r, 33, f"=IF(A{r}=\"\",0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",K{r},IF(F{r}=\"Active\",({base_feeder_i})*(1+'02_Board_&_Busbars'!$B$17),IF(F{r}=\"Future\",{base_feeder_i},0)))))").number_format = "#,##0.0"
+        ws_fed.cell(r, 30, f"=IF(OR(A{r}=\"\",NOT({has_act_inc})),0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",IF(F{r}=\"Active\",J{r},0),IF(F{r}=\"Active\",{base_feeder_i},0))))").number_format = "#,##0.0"
+        ws_fed.cell(r, 31, f"=IF(OR(A{r}=\"\",NOT({has_act_inc})),0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",K{r},IF(F{r}=\"Active\",{base_feeder_i},0))))").number_format = "#,##0.0"
+        ws_fed.cell(r, 32, f"=IF(OR(A{r}=\"\",NOT({has_act_inc})),0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",IF(F{r}=\"Active\",J{r},0),IF(F{r}=\"Active\",({base_feeder_i})*(1+'02_Board_&_Busbars'!$B$17),IF(F{r}=\"Future\",{base_feeder_i},0)))))").number_format = "#,##0.0"
+        ws_fed.cell(r, 33, f"=IF(OR(A{r}=\"\",NOT({has_act_inc})),0,IF(OR(E{r}=\"Spare / Placeholder\",E{r}=\"Incomer\",E{r}=\"Bus Coupler\"),0,IF(E{r}=\"Interconnector\",K{r},IF(F{r}=\"Active\",({base_feeder_i})*(1+'02_Board_&_Busbars'!$B$17),IF(F{r}=\"Future\",{base_feeder_i},0)))))").number_format = "#,##0.0"
 
         def sc_iop_expr(sc_col):
             return f"IF(E{r}=\"Incomer\",IF(F{r}=\"Active\",${sc_col}$52/MAX(1,COUNTIFS($E${FEED_START}:$E${FEED_END},\"Incomer\",$F${FEED_START}:$F${FEED_END},\"Active\")),0),{sc_col}{r})"
@@ -988,7 +990,7 @@ def generate_workbook():
         def make_loss_formula(sc_col, is_future_sc, is_n1_sc):
             iop_ref = sc_iop_expr(sc_col)
             active_expr = f"OR(F{r}=\"Active\"" + (f",F{r}=\"Future\"" if is_future_sc else "") + (f",E{r}=\"Interconnector\"" if is_n1_sc else "") + ")"
-            is_on = f"IF(E{r}=\"Interconnector\",{iop_ref}>0,IF(E{r}=\"Spare / Placeholder\",Q{r}>0,{active_expr}))"
+            is_on = f"IF(E{r}=\"Spare / Placeholder\",Q{r}>0,AND({has_act_inc},IF(E{r}=\"Interconnector\",{iop_ref}>0,{active_expr})))"
             loss_mod = f"IFERROR(INDEX({lib_mod_rng},MATCH(G{r},{lib_name_rng},0)),\"quadratic\")"
             var_part = f"IF({loss_mod}=\"vsd\",P{r}*(0.25+0.75*(({iop_ref})/MAX(1,O{r}))),P{r}*((({iop_ref})/MAX(1,O{r}))^2))"
             vbb_rac_expr = f"IF(OR(IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"VBB-Std\")=\"VBB-Heavy\",AND(E{r}=\"Interconnector\",IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"None\")=\"None\")),'02_Board_&_Busbars'!$D$60,'02_Board_&_Busbars'!$C$60)"
@@ -999,7 +1001,7 @@ def generate_workbook():
             ic_cable_part = f"IF(E{r}=\"Interconnector\",3*(({iop_ref})^2)*(0.017241*(1+0.00393*50)/(3*240))*1.05*2.5,0)"
             return f"=IF(A{r}=\"\",0,IF({is_on},Q{r}+{var_part}+{takeoff_part}+{ic_cable_part},0))"
 
-        is_act_now = f"IF(E{r}=\"Interconnector\",S{r}>0,IF(E{r}=\"Spare / Placeholder\",Q{r}>0,OR(F{r}=\"Active\",AND(F{r}=\"Future\",OR('01_Summary'!$C$9=\"Normal + Future\",'01_Summary'!$C$9=\"Worst-Case (N-1 + Future)\")))))"
+        is_act_now = f"IF(E{r}=\"Spare / Placeholder\",Q{r}>0,AND({has_act_inc},IF(E{r}=\"Interconnector\",S{r}>0,OR(F{r}=\"Active\",AND(F{r}=\"Future\",OR('01_Summary'!$C$9=\"Normal + Future\",'01_Summary'!$C$9=\"Worst-Case (N-1 + Future)\"))))))"
         loss_mod = f"IFERROR(INDEX({lib_mod_rng},MATCH(G{r},{lib_name_rng},0)),\"quadratic\")"
         vbb_rac = f"IF(OR(IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"VBB-Std\")=\"VBB-Heavy\",AND(E{r}=\"Interconnector\",IFERROR(INDEX($D${COL_START}:$D${COL_END},MATCH(A{r},$A${COL_START}:$A${COL_END},0)),\"None\")=\"None\")),'02_Board_&_Busbars'!$D$60,'02_Board_&_Busbars'!$C$60)"
 
@@ -1601,11 +1603,39 @@ def generate_workbook():
     ws_sum.add_data_validation(dv_mode); dv_mode.add("C8")
     ws_sum.add_data_validation(dv_sc); dv_sc.add("C9")
 
-    # Section 1: KPI Cards (respects Simple Mode vs Detailed Mode!)
+    # Section 1: KPI Cards (respects Simple Mode vs Detailed Mode!) + Live Design Check Row 10 (no row shift!)
+    sm_act_row = "IF($C$9=\"Normal (N)\",23,IF($C$9=\"N-1 Firm Transfer\",24,IF($C$9=\"Normal + Future\",25,26)))"
+    ws_sum.row_dimensions[10].height = 20
+    ws_sum.merge_cells("A10:H10")
+    sm_bb_in_chk = "INDEX('00_Simple_Mode'!$B$37:$B$45,MATCH('00_Simple_Mode'!$B$6,'00_Simple_Mode'!$A$37:$A$45,0))"
+    c_chk = ws_sum.cell(
+        10, 1,
+        f"=IF($C$8=\"Simple Mode\","
+        f"IF(INDEX('00_Simple_Mode'!$F$23:$F$26,{sm_act_row}-22)>{sm_bb_in_chk}*1.001,"
+        f"\"⚠ SIMPLE MODE CHECK: Est. Board Load (\"&TEXT(INDEX('00_Simple_Mode'!$F$23:$F$26,{sm_act_row}-22),\"#,##0\")&\" A) exceeds Main Busbar Rating (\"&TEXT({sm_bb_in_chk},\"#,##0\")&\" A)!\","
+        f"\"✓ SIMPLE MODE DESIGN CHECK OK — Main Busbar rating covers Active Scenario load\"),"
+        f"IF(COUNTIFS('03_Feeder_Schedule'!$E$17:$E$51,\"Incomer\",'03_Feeder_Schedule'!$F$17:$F$51,\"Active\")=0,"
+        f"\"⚠ DESIGN CHECK: No Active Incomer in 03_Feeder_Schedule — Switchboard section is de-energised (0 A)\","
+        f"IF('04_Busbar_Segments'!F13>1.001,"
+        f"\"⚠ DESIGN CHECK: Main Horizontal Busbar (HBB) exceeds 100% rated current (\"&TEXT('04_Busbar_Segments'!F13,\"0.0%\")&\")!\","
+        f"IF('04_Busbar_Segments'!I53>1.001,"
+        f"\"⚠ DESIGN CHECK: Vertical Dropper Busbar (VBB) exceeds 100% rated current (\"&TEXT('04_Busbar_Segments'!I53,\"0.0%\")&\")!\","
+        f"IF(MAX('03_Feeder_Schedule'!T17:T51)>1.004,"
+        f"\"⚠ DESIGN CHECK: One or more active circuits exceed 100% device rated current (I_op > In)!\","
+        f"\"✓ ALL ELECTRICAL DESIGN CHECKS OK — Active Incomer present · HBB, VBB & Device currents within ratings\")))))"
+    )
+    c_chk.font = Font(name=FONT_FAMILY, size=9, bold=True, color=OK_FG)
+    c_chk.alignment = ALIGN_L
+    for cc in range(1, 9):
+        ws_sum.cell(10, cc).fill = FILL_OK
+        ws_sum.cell(10, cc).border = BORDER_CELL
+    ws_sum.conditional_formatting.add(
+        "A10:H10",
+        FormulaRule(formula=['ISNUMBER(SEARCH("⚠",$A$10))'], stopIfTrue=True, fill=FILL_WARN, font=Font(name=FONT_FAMILY, size=9, bold=True, color=WARN_FG)),
+    )
+
     style_section_bar(ws_sum, 11, 1, 8, "1. ACTIVE SCENARIO THERMAL & SWITCHROOM COOLING KPIs")
     ws_sum.row_dimensions[12].height = 18; ws_sum.row_dimensions[13].height = 28; ws_sum.row_dimensions[14].height = 18
-
-    sm_act_row = "IF($C$9=\"Normal (N)\",23,IF($C$9=\"N-1 Firm Transfer\",24,IF($C$9=\"Normal + Future\",25,26)))"
     kpi_defs = [
         (1, 2, "TOTAL SWITCHGEAR HEAT LOSS",
          f"=IF($C$8=\"Simple Mode\",INDEX('00_Simple_Mode'!$B$23:$B$26,{sm_act_row}-22),('04_Busbar_Segments'!K13+'04_Busbar_Segments'!L53+'03_Feeder_Schedule'!Y52+'02_Board_&_Busbars'!B24)/1000)",
@@ -1831,7 +1861,7 @@ def generate_workbook():
     try:
         wb.save(final_path)
     except PermissionError:
-        final_path = OUTPUT_PATH.replace(".xlsx", "_v2.9.xlsx")
+        final_path = OUTPUT_PATH.replace(".xlsx", "_v3.0.xlsx")
         wb.save(final_path)
         print(f"NOTE: Original file is open in Excel; saved updated workbook to: {final_path}")
 

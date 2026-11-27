@@ -1,5 +1,5 @@
 {
-  "version": "2.9.0",
+  "version": "3.0.0",
   "released": "2026-11-27",
-  "notes": "Two-step cascading Device Type -> Model/Size dropdowns; widened numeric inputs so values never clip behind up/down spinners; full Interconnector left-of-incomer VBB/HBB calculation & N-1 indicator in both Web App and Excel."
+  "notes": "Comprehensive technical & UX release: automated busbar/device/geometry overload checks, unpowered busbar section physics, exact VSD IGBT worked breakdown in Analyse modal, 2-step cascading dropdowns, widened numeric inputs, and aligned 10-sheet macro-free Excel export."
 }

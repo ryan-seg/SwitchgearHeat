@@ -256,7 +256,7 @@ window.SGExplain = (function () {
           },
           {
             label: 'Step 3 — Peak Horizontal Busbar W/m',
-            math: `Max HBB W/m = 3 × (${fmt(t.maxHbbCurrentA, 1)} A)² × ${fmt(hr.rAcT_uOhmPerM, 2)} µΩ/m = ${fmt(t.maxHbbWPerM, 1)} W/m`,
+            math: `Max HBB W/m = 3 × (${fmt(t.maxHbbCurrentA, 1)} A)² × ${fmt(hr.rAcT_uOhmPerM, 2)} µΩ/m${cfg.poles === '3P+N' && cfg.neutralCurrentRatio > 0 ? ' + P_neutral' : ''} = ${fmt(t.maxHbbWPerM, 1)} W/m`,
             note: `Busbar rated dissipation at ${bb.ratedCurrentA} A is ${fmt(evalRes.hbbRatedWPerM, 1)} W/m.`,
           },
         ],
@@ -793,12 +793,25 @@ window.SGExplain = (function () {
         });
       }
 
+      const isVsdCurve =
+        tier.lossModel === 'vsd_efficiency' ||
+        (Array.isArray(tier.subComponents) && tier.subComponents.some((sc) => sc.lossModel === 'vsd_efficiency'));
+
       if (tier.role !== 'spacer') {
-        steps.push({
-          label: 'Step 2 — Quadratic Load Scaling Factor (IEC TR 60890)',
-          math: `(I_op / I_n)² = (${fmt(tr.iOp, 1)} / ${tier.ratedCurrentA})² = (${fmt(dl.loadRatio, 3)})² = ${fmt(dl.loadRatioSq, 4)}`,
-          note: 'Resistive losses in breaker poles, HRC fuse links, contactors, and overloads scale quadratically with current.',
-        });
+        if (isVsdCurve) {
+          const vsdFactor = dl.iOp > 0 || tr.isActive ? 0.25 + 0.75 * dl.loadRatio : 0;
+          steps.push({
+            label: 'Step 2 — Semiconductor / IGBT Power Stage Load Scaling (IEC 61800-9-2)',
+            math: `k_VSD = 0.25 + 0.75 × (I_op / I_n) = 0.25 + 0.75 × (${fmt(tr.iOp, 1)} / ${tier.ratedCurrentA}) = ${fmt(vsdFactor, 4)}   |   Input Breaker (I_op / I_n)² = ${fmt(dl.loadRatioSq, 4)}`,
+            note: 'IGBT switching & rectifier conduction losses retain a ~25% switching floor when energized rather than dropping purely quadratically.',
+          });
+        } else {
+          steps.push({
+            label: 'Step 2 — Quadratic Load Scaling Factor (IEC TR 60890)',
+            math: `(I_op / I_n)² = (${fmt(tr.iOp, 1)} / ${tier.ratedCurrentA})² = (${fmt(dl.loadRatio, 3)})² = ${fmt(dl.loadRatioSq, 4)}`,
+            note: 'Resistive losses in breaker poles, HRC fuse links, contactors, and overloads scale quadratically with current.',
+          });
+        }
 
         if (dl.breakdown && dl.breakdown.length > 0) {
           const subLines = dl.breakdown
@@ -833,7 +846,9 @@ window.SGExplain = (function () {
         title: `${tier.tag} — ${tier.description}`,
         badge: `${tier.category} · ${cr.col.name}`,
         resultText: `${fmt(totalRowW, 1)} W (${fmt(tr.iOp, 1)} A operating vs ${tier.ratedCurrentA} A rated)`,
-        formula: 'P_comp = [ P_fixed + Σ P_var,n · (I_op / I_n)² ] + P_takeoff_joint + P_cable',
+        formula: isVsdCurve
+          ? 'P_comp = P_fixed + P_IGBT · (0.25 + 0.75 · I_op/I_n) + P_MCCB · (I_op/I_n)² + P_takeoff_joint'
+          : 'P_comp = [ P_fixed + Σ P_var,n · (I_op / I_n)² ] + P_takeoff_joint + P_cable',
         inputs,
         steps,
         commentary,

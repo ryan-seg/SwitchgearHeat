@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '2.9.0';
+  const APP_VERSION = '3.0.0';
 
   function loadInitialProject() {
     try {
@@ -214,6 +214,20 @@
     grid.querySelectorAll('[data-explain]').forEach((card) => {
       card.addEventListener('click', () => openExplain(card.dataset.explain));
     });
+
+    const warnBar = document.getElementById('design-warnings-bar');
+    if (warnBar) {
+      const warns = evalRes.warnings || [];
+      if (warns.length === 0) {
+        warnBar.style.display = 'none';
+        warnBar.innerHTML = '';
+      } else {
+        warnBar.style.display = 'flex';
+        warnBar.innerHTML =
+          `<strong style="color:var(--warm);">⚠️ Engineering Checks (${warns.length}):</strong>` +
+          warns.map((w) => `<span class="warn-chip">${esc(w)}</span>`).join('');
+      }
+    }
   }
 
   // --- Zoom Helpers ---
@@ -1464,7 +1478,12 @@
       btn.addEventListener('click', () => {
         pushUndo();
         tier.subComponents.splice(Number(btn.dataset.scDel), 1);
-        if (tier.subComponents.length === 0) tier.subComponents = null;
+        if (tier.subComponents.length === 0) {
+          tier.subComponents = null;
+        } else {
+          tier.ratedLossW = tier.subComponents.reduce((a, b) => a + (Number(b.ratedLossW) || 0), 0);
+          tier.fixedLossW = tier.subComponents.reduce((a, b) => a + (Number(b.fixedLossW) || 0), 0);
+        }
         renderAll();
       });
     });
@@ -1472,6 +1491,8 @@
     on('t-add-subcomp', 'click', () => {
       pushUndo();
       tier.subComponents.push({ name: 'Aux / Component', ratedCurrentA: tier.ratedCurrentA, ratedLossW: 10, fixedLossW: 2 });
+      tier.ratedLossW = tier.subComponents.reduce((a, b) => a + (Number(b.ratedLossW) || 0), 0);
+      tier.fixedLossW = tier.subComponents.reduce((a, b) => a + (Number(b.fixedLossW) || 0), 0);
       renderAll();
     });
 
@@ -2744,12 +2765,23 @@
       });
     });
 
-    // Undo button & Ctrl+Z
+    // Undo button, Ctrl+Z & Delete selected compartment shortcut
     document.getElementById('btn-undo').addEventListener('click', performUndo);
     document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+      const tag = document.activeElement && document.activeElement.tagName;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         performUndo();
+      } else if (e.key === 'Delete' && project.uiMode !== 'simple' && selection && selection.type === 'tier') {
+        const col = project.columns[selection.colIndex];
+        if (col && col.tiers[selection.tierIndex]) {
+          e.preventDefault();
+          pushUndo();
+          col.tiers.splice(selection.tierIndex, 1);
+          selection = { type: 'column', colIndex: selection.colIndex };
+          renderAll();
+        }
       }
     });
 
@@ -2757,7 +2789,10 @@
       const v = e.target.value;
       if (!v) return;
       pushUndo();
-      if (v === 'default') project = window.SGState.createDefaultProject();
+      if (v === 'reset') {
+        window.SGState.clearSavedData();
+        project = window.SGState.createDefaultProject();
+      } else if (v === 'default') project = window.SGState.createDefaultProject();
       else if (v === 'dual') project = window.SGState.createDualIncomerProject();
       else if (v === 'blank') project = window.SGState.createBlankProject();
       selection = { type: 'mainBusbar' };
@@ -2837,6 +2872,8 @@
           const parsed = JSON.parse(reader.result);
           if (parsed && parsed.columns && parsed.mainBusbar) {
             pushUndo();
+            parsed.deviceLibrary = window.SGState.syncLibraryWithDefaults(parsed.deviceLibrary);
+            window.SGState.ensureExtras(parsed);
             project = parsed;
             selection = { type: 'mainBusbar' };
             renderAll();
@@ -2948,8 +2985,8 @@
               <p>As you edit, your project state and selected colour theme are saved locally inside <strong>your browser's own <code>localStorage</code></strong> on this computer so work is not lost if you refresh. Data remains strictly on your local device unless you export or clear it.</p>
             </div>
             <div class="privacy-item">
-              <h4>3. Manual File Exports (JSON / CSV / SVG / Print PDF)</h4>
-              <p>Clicking <strong>Save JSON</strong>, <strong>Export CSV</strong>, <strong>Export SVG</strong>, or <strong>Print / PDF Report</strong> generates files locally in your browser's memory and saves them directly to your computer—nothing is uploaded.</p>
+              <h4>3. Manual File Exports (Excel .xlsx / JSON / CSV / SVG / Print PDF)</h4>
+              <p>Clicking <strong>Export Excel (.xlsx)</strong>, <strong>Save JSON</strong>, <strong>CSV</strong>, <strong>Export SVG</strong>, or <strong>Print / PDF</strong> generates files locally in your browser's memory and saves them directly to your computer—nothing is uploaded.</p>
             </div>
             <div class="privacy-item">
               <h4>4. How "Share Link" Works (#data= URL Fragment)</h4>

@@ -487,53 +487,63 @@ window.SGPhysics = (function () {
       sections.push({ start: startIdx, end: columnResults.length - 1 });
     }
 
-    // Solve each electrical section: sum all load columns, distribute across active incomers in section
+    // Solve each electrical section: sum all load columns, distribute across active incomer tiers in section
     const hbbSegments = [];
+    const warnings = [];
     let totalIncomerCurrentA = 0;
 
     sections.forEach((sec, secIdx) => {
       const secCols = columnResults.slice(sec.start, sec.end + 1);
-      const totalSecLoadA = secCols.reduce((sum, c) => sum + c.colTotalLoadA, 0);
+      const potentialSecLoadA = secCols.reduce((sum, c) => sum + c.colTotalLoadA, 0);
 
-      // Find active incomers in this section
-      const activeIncomerCols = secCols.filter((c) =>
-        c.tiers.some((t) => t.tier.role === 'incomer' && t.tier.status !== 'standby' && t.tier.incomerState !== 'open')
-      );
+      // Find all active closed incomer tiers in this electrical section (supports multiple incomers even in same column)
+      const activeIncomerTiers = [];
+      secCols.forEach((c) => {
+        c.tiers.forEach((t) => {
+          if (t.tier.role === 'incomer' && t.tier.status !== 'standby' && t.tier.incomerState !== 'open') {
+            activeIncomerTiers.push({ colRes: c, tierRes: t });
+          } else if (t.tier.role === 'incomer') {
+            t.iOp = 0;
+            t.isActive = false;
+            t.deviceLoss = calcDeviceLoss(t.tier, 0, voltageV, false);
+            t.takeoffLossW = 0;
+          }
+        });
+      });
 
-      // Distribute load equally among active incomers in the section
-      if (activeIncomerCols.length > 0) {
-        const perIncomerA = totalSecLoadA / activeIncomerCols.length;
-        activeIncomerCols.forEach((ic) => {
-          ic.incomerSupplyA = perIncomerA;
-          totalIncomerCurrentA += perIncomerA;
-          ic.tiers.forEach((t) => {
-            if (t.tier.role === 'incomer' && t.tier.status !== 'standby' && t.tier.incomerState !== 'open') {
-              t.iOp = perIncomerA;
-              t.isActive = true;
-              t.deviceLoss = calcDeviceLoss(t.tier, perIncomerA, voltageV, true);
-              // Incomer riser connection & joint loss
-              const riserLenM = Math.max(0.3, Math.abs(t.yCenterMm - hbbCenterYMm) / 1000);
-              const riserLoss = calcBusbarLossPerMetre(hbbRes, perIncomerA, poles, neutralRatio).wPerMTotal * riserLenM;
-              const jointLoss = 3 * perIncomerA * perIncomerA * jointR_ohm * 2; // breaker terminals + HBB tee
-              t.takeoffLossW = riserLoss + jointLoss;
-            } else if (t.tier.role === 'incomer') {
-              t.iOp = 0;
+      // If NO active closed incomer feeds this section, the section busbar is de-energised (0 V, 0 A, 0 W)!
+      if (activeIncomerTiers.length === 0) {
+        if (potentialSecLoadA > 0.1) {
+          warnings.push(`Busbar Section ${secIdx + 1} (${secCols[0].col.name} → ${secCols[secCols.length - 1].col.name}) has ${Math.round(potentialSecLoadA)} A of connected load but NO active closed Incomer — section is de-energised (0 A, 0 W).`);
+        }
+        secCols.forEach((c) => {
+          c.colLocalRawA = 0;
+          c.colLocalDiversifiedA = 0;
+          c.colInterconnectorA = 0;
+          c.colTotalLoadA = 0;
+          c.incomerSupplyA = 0;
+          c.tiers.forEach((t) => {
+            if (t.tier.role !== 'spacer') {
               t.isActive = false;
+              t.iOp = 0;
               t.deviceLoss = calcDeviceLoss(t.tier, 0, voltageV, false);
               t.takeoffLossW = 0;
+              if (t.cableLoss) t.cableLoss = { lengthM: 0, wPerM: 0, totalW: 0 };
             }
           });
         });
       } else {
-        // Still initialize inactive incomer device losses to 0
-        secCols.forEach((c) => {
-          c.tiers.forEach((t) => {
-            if (t.tier.role === 'incomer') {
-              t.iOp = 0;
-              t.isActive = false;
-              t.deviceLoss = calcDeviceLoss(t.tier, 0, voltageV, false);
-            }
-          });
+        const perIncomerA = potentialSecLoadA / activeIncomerTiers.length;
+        activeIncomerTiers.forEach(({ colRes, tierRes }) => {
+          colRes.incomerSupplyA += perIncomerA;
+          totalIncomerCurrentA += perIncomerA;
+          tierRes.iOp = perIncomerA;
+          tierRes.isActive = true;
+          tierRes.deviceLoss = calcDeviceLoss(tierRes.tier, perIncomerA, voltageV, true);
+          const riserLenM = Math.max(0.3, Math.abs(tierRes.yCenterMm - hbbCenterYMm) / 1000);
+          const riserLoss = calcBusbarLossPerMetre(hbbRes, perIncomerA, poles, neutralRatio).wPerMTotal * riserLenM;
+          const jointLoss = 3 * perIncomerA * perIncomerA * jointR_ohm * 2; // breaker terminals + HBB tee
+          tierRes.takeoffLossW = riserLoss + jointLoss;
         });
       }
 
@@ -693,8 +703,21 @@ window.SGPhysics = (function () {
     let totalStarterDevicesW = 0;
     let totalInterconnectorDeviceW = 0;
     let totalInterconnectorCableW = 0;
+    let totalSpacerAuxW = 0;
     let totalLocalLoadA = 0;
     let totalInterconnectorLoadA = 0;
+
+    // Automated Engineering Rating & Geometry Checks
+    hbbSegments.forEach((s) => {
+      if (s.utilizationPct > 100.1) {
+        warnings.push(`Main HBB span (${s.fromColName} → ${s.toColName}) carries ${Math.round(s.currentA)} A (${s.utilizationPct.toFixed(0)}% of ${project.mainBusbar.ratedCurrentA} A rating).`);
+      }
+    });
+    allVbbSegments.forEach((s) => {
+      if (s.utilizationPct > 100.1) {
+        warnings.push(`Vertical Busbar in ${s.colName} (${s.fromLabel} → ${s.toLabel}) carries ${Math.round(s.currentA)} A (${s.utilizationPct.toFixed(0)}% of rating).`);
+      }
+    });
 
     const deviceRows = [];
 
@@ -702,6 +725,11 @@ window.SGPhysics = (function () {
       let colDevicesW = 0;
       let colTakeoffW = 0;
       let colCableW = 0;
+      const usableColHeightMm = cr.usableBottomMm - cr.usableTopMm;
+      const stackedHeightMm = cr.tiers.reduce((sum, t) => sum + t.heightMm, 0);
+      if (stackedHeightMm > usableColHeightMm + 1) {
+        warnings.push(`${cr.col.name}: Stacked compartment height (${stackedHeightMm} mm) exceeds usable cubicle zone (${usableColHeightMm} mm).`);
+      }
 
       totalLocalLoadA += cr.colLocalDiversifiedA;
       totalInterconnectorLoadA += cr.colInterconnectorA;
@@ -713,7 +741,13 @@ window.SGPhysics = (function () {
         colCableW += tr.cableLoss ? tr.cableLoss.totalW : 0;
         totalTakeoffAndJointW += tr.takeoffLossW || 0;
 
-        if (tr.tier.role === 'incomer' || tr.tier.role === 'bus_coupler') {
+        if (tr.isActive && tr.tier.role !== 'spacer' && tr.iOp > (Number(tr.tier.ratedCurrentA) || 1) * 1.002) {
+          warnings.push(`${tr.tier.tag} (${cr.col.name}): Operating current ${tr.iOp.toFixed(0)} A exceeds device rating ${tr.tier.ratedCurrentA} A.`);
+        }
+
+        if (tr.tier.role === 'spacer') {
+          totalSpacerAuxW += devW;
+        } else if (tr.tier.role === 'incomer' || tr.tier.role === 'bus_coupler') {
           totalIncomerDevicesW += devW;
         } else if (tr.tier.role === 'interconnector') {
           totalInterconnectorDeviceW += devW;
@@ -763,7 +797,7 @@ window.SGPhysics = (function () {
       cr.colTotalLossW = colDevicesW + colTakeoffW + colCableW + cr.vbbTotalLossW;
     });
 
-    const totalAuxW = Math.max(0, Number(cfg.auxiliaryLossesW) || 0); // metering, panel lights, PLC, fans
+    const totalAuxW = Math.max(0, Number(cfg.auxiliaryLossesW) || 0) + totalSpacerAuxW; // metering, panel lights, PLC, reserve aux chambers
     const totalBusbarW = totalHbbLossW + totalVbbLossW + totalTakeoffAndJointW;
     const totalDevicesW =
       totalIncomerDevicesW + totalFeederDevicesW + totalStarterDevicesW + totalInterconnectorDeviceW;
@@ -809,6 +843,7 @@ window.SGPhysics = (function () {
       vbbSegments: allVbbSegments,
       columns: columnResults,
       deviceRows,
+      warnings,
       totals: {
         totalIncomerCurrentA,
         totalLocalLoadA,

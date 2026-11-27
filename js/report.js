@@ -320,7 +320,7 @@ window.SGReport = (function () {
                   (cr) => `<tr>
                     <td><strong>${esc(cr.col.name)}</strong></td>
                     <td class="num">${cr.widthMm}</td>
-                    <td class="num">${cr.hasIncomer ? 'Incomer ' + cr.incomerSupplyA.toFixed(0) : cr.colTotalLoadA.toFixed(1)}</td>
+                    <td class="num">${cr.hasIncomer && cr.colInterconnectorA > 0 ? 'Inc ' + cr.incomerSupplyA.toFixed(0) + ' / IC ' + cr.colInterconnectorA.toFixed(0) : cr.hasIncomer ? 'Incomer ' + cr.incomerSupplyA.toFixed(0) : cr.colTotalLoadA.toFixed(1)}</td>
                     <td class="num">${cr.colDevicesW.toFixed(1)}</td>
                     <td class="num">${cr.vbbTotalLossW.toFixed(1)}</td>
                     <td class="num">${(cr.colTakeoffW + cr.colCableW).toFixed(1)}</td>
@@ -871,6 +871,16 @@ window.SGReport = (function () {
     evalRes.deviceRows.forEach((r) => {
       pushRow([r.colName, r.tag, r.description, r.category, r.role, r.status, r.isActive ? 'YES' : 'NO', r.ratedCurrentA, r.iOp.toFixed(1), (r.loadRatio * r.loadRatio).toFixed(3), r.ratedLossW.toFixed(1), r.fixedLossW.toFixed(1), r.varLossW.toFixed(1), r.deviceLossW.toFixed(1), r.takeoffLossW.toFixed(1), r.cableLossW.toFixed(1), r.totalRowW.toFixed(1)]);
     });
+
+    if (project.room) {
+      const rv = window.SGPhysics.calcRoomVentilation(project.room, evalRes.totals.grandTotalKW, project.config.hvacSafetyMarginPct);
+      pushRow([]);
+      pushRow(['=== SWITCHROOM COOLING, AIRFLOW & VENTILATION ASSESSMENT ===']);
+      pushRow(['Dimensions (m)', `${rv.L} x ${rv.W} x ${rv.H}`, 'Volume (m3)', rv.volumeM3.toFixed(1), 'Design Heat (kW)', rv.designHeatKW.toFixed(3)]);
+      pushRow(['Ambient Temp (C)', rv.tAmb, 'Max Room Temp (C)', rv.tMax, 'Allowable Rise dT (K)', rv.deltaT.toFixed(1)]);
+      pushRow(['Required Airflow (L/s)', rv.reqFlowLs.toFixed(0), 'Required Airflow (m3/h)', rv.reqFlowM3h.toFixed(0), 'Air Change Rate (ACH)', rv.ach.toFixed(2)]);
+      pushRow(['Natural Stack Cap (kW)', rv.natCapacityKW.toFixed(2), 'Est Natural Room Temp (C)', rv.estNatRoomTempC.toFixed(1), 'Verdict', rv.verdictTitle]);
+    }
 
     const slug = (project.meta.projectNumber || 'switchgear').replace(/[^a-z0-9_-]/gi, '_');
     downloadBlob(lines.join('\r\n'), `${slug}_heat_loss_${evalRes.scenario}.csv`, 'text/csv;charset=utf-8');
