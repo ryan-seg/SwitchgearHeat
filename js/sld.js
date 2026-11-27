@@ -418,9 +418,9 @@ window.SGSLD = (function () {
             <rect x="${dropperX + 44}" y="${ty - 32}" width="144" height="64" rx="6"
               fill="${cardFill}" stroke="${cardStroke}" stroke-width="${isSel ? 2 : 1.2}"
               stroke-dasharray="${isFuture ? '5 3' : 'none'}" />
-            <text x="${dropperX + 51}" y="${ty - 16}" fill="${active ? P.textMain : P.textMuted}" font-size="10.2" font-weight="700" font-family="Inter, sans-serif">⋮⋮ ${esc(truncate(tr.tier.tag, 12))}${tr.tier.phases === '1P' ? ' [1P]' : ''}</text>
+            <text x="${dropperX + 51}" y="${ty - 16}" fill="${active ? P.textMain : P.textMuted}" font-size="10.2" font-weight="700" font-family="Inter, sans-serif">⋮⋮ ${esc(truncate(tr.tier.tag, 12))}${tr.tier.phases === '1P' ? ' [1P]' : tr.tier.phases === '2P' ? ' [2P]' : ''}</text>
             <text x="${dropperX + 168}" y="${ty - 16}" text-anchor="end" fill="${active ? P.warmText : P.textDim}" font-size="10" font-weight="700" font-family="JetBrains Mono, monospace">${totalW.toFixed(0)}W</text>
-            <text x="${dropperX + 51}" y="${ty - 2}" fill="${P.textMuted}" font-size="9" font-family="Inter, sans-serif">${esc(truncate(tr.tier.category + ' · ' + tr.tier.ratedCurrentA + 'A' + (tr.tier.phases === '1P' ? ' 1P' : ''), 22))}</text>
+            <text x="${dropperX + 51}" y="${ty - 2}" fill="${P.textMuted}" font-size="9" font-family="Inter, sans-serif">${esc(truncate(tr.tier.category + ' · ' + tr.tier.ratedCurrentA + 'A' + (tr.tier.phases === '1P' ? ' 1P' : tr.tier.phases === '2P' ? ' 2P' : ''), 22))}</text>
             <text x="${dropperX + 51}" y="${ty + 13}" fill="${isInterconn && active ? '#ea580c' : active ? P.accent : P.textDim}" font-size="9.6" font-weight="600" font-family="JetBrains Mono, monospace">${active ? tr.iOp.toFixed(1) + ' A' : isInterconn ? '0 A (N-1: ' + Math.round(tr.tier.n1TransferCurrentA || 0) + 'A)' : isFuture ? 'FUTURE (OFF)' : 'IDLE / 0 A'}</text>
             <text x="${dropperX + 51}" y="${ty + 25}" fill="${P.textDim}" font-size="8.5" font-family="JetBrains Mono, monospace">${isInterconn ? '→ ' + esc(truncate(tr.tier.remoteBoardName || 'MSB-B', 18)) : 'EL +' + Math.round(evalRes.panelHeightMm - tr.yCenterMm) + 'mm'}</text>
             <g class="quick-del-btn clickable" data-quick-del-tier="${colIdx}:${origIdx}" title="Remove component">

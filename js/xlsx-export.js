@@ -586,14 +586,15 @@ window.SGXlsxExport = (function () {
 
       const tplNameEx = ensureLibraryMatch(tier, tier.description);
       const is1P = tier.phases === '1P';
+      const is2P = tier.phases === '2P';
       const loadModeEx =
         tier.role === 'incomer' || tier.role === 'bus_coupler'
           ? 'Auto'
           : tier.role === 'interconnector'
           ? 'Amps'
           : tier.loadInputMode === 'kw'
-          ? (is1P ? 'kW (1P)' : 'kW')
-          : (is1P ? 'Amps (1P)' : 'Amps');
+          ? (is1P ? 'kW (1P)' : is2P ? 'kW (2P)' : 'kW')
+          : (is1P ? 'Amps (1P)' : is2P ? 'Amps (2P)' : 'Amps');
       const baseLoad =
         tier.role === 'incomer' || tier.role === 'bus_coupler' || tier.role === 'spacer'
           ? 0

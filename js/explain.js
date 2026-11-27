@@ -777,30 +777,31 @@ window.SGExplain = (function () {
             : `Normal operation → transfer set to ${tier.normalTransferCurrentA || 0} A.`,
         });
       } else if (tier.loadInputMode === 'kw') {
-        const is1P = tier.phases === '1P';
+        const is1or2P = tier.phases === '1P' || tier.phases === '2P';
         const vPh = cfg.voltageV / Math.sqrt(3);
-        const rawA = is1P
+        const rawA = is1or2P
           ? (tier.loadKw * 1000) / (vPh * tier.powerFactor * tier.efficiency)
           : (tier.loadKw * 1000) / (Math.sqrt(3) * cfg.voltageV * tier.powerFactor * tier.efficiency);
         const growthMul = evalRes.includeFuture && tier.status === 'active' && cfg.globalFutureGrowthPct > 0 ? 1 + cfg.globalFutureGrowthPct / 100 : 1;
+        const phLabel = tier.phases === '1P' ? `1-Phase (${Math.round(vPh)}V · 1 fuse/pole)` : tier.phases === '2P' ? `Double Pole 2P (${Math.round(vPh)}V · 2 fuses/poles)` : `3-Phase (${cfg.voltageV}V · 3 fuses/poles)`;
         steps.push({
-          label: `Step 1 — Operating Current I_op from Load Power (${is1P ? '1-Phase ' + Math.round(vPh) + 'V' : '3-Phase ' + cfg.voltageV + 'V'})`,
-          math: is1P
-            ? `I_flc(1P) = (${tier.loadKw} × 1000) / (${fmt(vPh, 1)}V × ${tier.powerFactor} × ${tier.efficiency}) = ${fmt(rawA, 1)} A → × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`
+          label: `Step 1 — Operating Current I_op from Load Power (${phLabel})`,
+          math: is1or2P
+            ? `I_flc(${tier.phases}) = (${tier.loadKw} × 1000) / (${fmt(vPh, 1)}V × ${tier.powerFactor} × ${tier.efficiency}) = ${fmt(rawA, 1)} A → × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`
             : `I_flc(3P) = (${tier.loadKw} × 1000) / (√3 × ${cfg.voltageV}V × ${tier.powerFactor} × ${tier.efficiency}) = ${fmt(rawA, 1)} A → × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`,
           note: isFutureOff
             ? 'Tier is marked FUTURE and off in this scenario → 0 A.'
-            : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated device${tier.frameSize ? ' (' + tier.frameSize + ')' : ''}.${is1P ? ` Contributes ${fmt(tr.iOp / 3, 1)} A/ph equivalent to 3P busbars & incomer.` : ''}`,
+            : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated device${tier.frameSize ? ' (' + tier.frameSize + ')' : ''}.${is1or2P ? ` Contributes ${fmt(tr.iOp / 3, 1)} A/ph equivalent to 3P busbars & incomer.` : ''}`,
         });
       } else {
-        const is1P = tier.phases === '1P';
+        const is1or2P = tier.phases === '1P' || tier.phases === '2P';
         const growthMul = evalRes.includeFuture && tier.status === 'active' && cfg.globalFutureGrowthPct > 0 ? 1 + cfg.globalFutureGrowthPct / 100 : 1;
         steps.push({
-          label: `Step 1 — Operating Current I_op (Direct Amperes, ${is1P ? '1-Phase 230V' : '3-Phase ' + cfg.voltageV + 'V'})`,
+          label: `Step 1 — Operating Current I_op (Direct Amperes, ${tier.phases || '3P'})`,
           math: `I_op = ${tier.operatingCurrentA} A × Duty(${tier.loadFactor})${growthMul > 1 ? ` × Future(${fmt(growthMul, 2)})` : ''} = ${fmt(tr.iOp, 1)} A`,
           note: isFutureOff
             ? 'Tier is marked FUTURE and off in this scenario → 0 A.'
-            : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated device${tier.frameSize ? ' (' + tier.frameSize + ')' : ''}.${is1P ? ` Contributes ${fmt(tr.iOp / 3, 1)} A/ph equivalent to 3P busbars & incomer.` : ''}`,
+            : `${fmt(dl.loadRatio * 100, 1)}% of ${tier.ratedCurrentA} A rated device${tier.frameSize ? ' (' + tier.frameSize + ')' : ''}.${is1or2P ? ` Contributes ${fmt(tr.iOp / 3, 1)} A/ph equivalent to 3P busbars & incomer.` : ''}`,
         });
       }
 
@@ -818,9 +819,9 @@ window.SGExplain = (function () {
           });
         } else {
           steps.push({
-            label: 'Step 2 — Quadratic Load Scaling Factor (IEC TR 60890)',
-            math: `(I_op / I_n)² = (${fmt(tr.iOp, 1)} / ${tier.ratedCurrentA})² = (${fmt(dl.loadRatio, 3)})² = ${fmt(dl.loadRatioSq, 4)}`,
-            note: 'Resistive losses in breaker poles, HRC fuse links, contactors, and overloads scale quadratically with current.',
+            label: 'Step 2 — Quadratic Load & Pole/Fuse Scaling Factor (IEC TR 60890)',
+            math: `(I_op / I_n)² = (${fmt(tr.iOp, 1)} / ${tier.ratedCurrentA})² = ${fmt(dl.loadRatioSq, 4)}${dl.poleScale && Math.abs(dl.poleScale - 1) > 0.01 ? `  ×  Pole/Fuse Count (${dl.activePoles}/${dl.nativePoles} = ${fmt(dl.poleScale, 3)})` : ''}`,
+            note: 'Resistive losses in breaker poles, HRC fuse links, contactors, and overloads scale quadratically with current and linearly with active poles/fuses (1P = 1 fuse, 2P = 2 fuses, 3P = 3 fuses).',
           });
         }
 

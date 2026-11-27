@@ -9,9 +9,9 @@
   <meta name="description" content="IEC 60439 / 61439 LV Switchgear Thermal & Heat Loss Calculator with Joule busbar physics, Eaton HRC fuses, interactive SLD, General Arrangement, and step-by-step calculation breakdown." />
   <meta name="theme-color" content="#0b1120" />
   <title>Switchgear Heat Loss Calculator — IEC 60439 / 61439</title>
-  <link rel="icon" href="./favicon.svg?v=3.4.0" type="image/svg+xml" />
-  <link rel="manifest" href="./manifest.json?v=3.4.0" />
-  <link rel="stylesheet" href="./css/styles.css?v=3.4.0" />
+  <link rel="icon" href="./favicon.svg?v=3.5.0" type="image/svg+xml" />
+  <link rel="manifest" href="./manifest.json?v=3.5.0" />
+  <link rel="stylesheet" href="./css/styles.css?v=3.5.0" />
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -19,10 +19,11 @@
     <header class="topbar">
       <div class="topbar-brand">
         <div class="brand-badge">⚡</div>
-        <div>
-          <h1 class="brand-title">Switchgear Thermal &amp; Heat Loss Calculator <span id="app-version-badge" class="version-pill">v3.4.0</span></h1>
+        <div style="flex:1;min-width:0;">
+          <h1 class="brand-title">Switchgear Thermal &amp; Heat Loss Calculator <span id="app-version-badge" class="version-pill">v3.5.0</span></h1>
           <div class="brand-sub">IEC 60439 / 61439 · Simple &amp; Detailed Modes · Joule Busbars · Eaton HRC Fuses · Room Cooling</div>
         </div>
+        <button id="btn-mobile-menu" class="btn btn-secondary mobile-only-btn" aria-label="Toggle Menu" aria-expanded="false">☰ Menu</button>
       </div>
 
       <div class="topbar-actions">
@@ -160,16 +161,21 @@
         </div>
       </section>
 
-      <!-- Right Context Inspector -->
-      <aside class="inspector-panel">
+      <!-- Right Context Inspector (Slide-over Drawer on Mobile) -->
+      <div id="mobile-inspector-backdrop" class="mobile-backdrop"></div>
+      <aside class="inspector-panel" id="inspector-panel">
         <div class="inspector-header">
           <h2 id="inspector-title">Inspector</h2>
-          <span id="inspector-badge" class="pill-badge">Selection</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="inspector-badge" class="pill-badge">Selection</span>
+            <button id="btn-close-inspector" class="btn btn-sm btn-secondary mobile-only-btn" title="Close Inspector">✕</button>
+          </div>
         </div>
         <div id="inspector-body" class="inspector-body">
           <!-- Context-sensitive editor rendered by app.js -->
         </div>
       </aside>
+      <button id="btn-mobile-inspector" class="mobile-fab" title="Edit Selected Component">⚙️ Edit Selected</button>
     </main>
 
     <!-- Bottom Privacy, Storage & Version Status Strip -->
@@ -179,7 +185,7 @@
         <button id="btn-privacy-footer" class="footer-link">Read full data &amp; storage notice</button>
       </div>
       <div class="footer-right">
-        <span id="update-status" class="update-status">v3.4.0 · Up to date</span>
+        <span id="update-status" class="update-status">v3.5.0 · Up to date</span>
       </div>
     </footer>
 
@@ -187,16 +193,16 @@
     <div id="print-report" class="print-only"></div>
   </div>
 
-  <script src="./js/physics.js?v=3.4.0"></script>
-  <script src="./js/catalog.js?v=3.4.0"></script>
-  <script src="./js/state.js?v=3.4.0"></script>
-  <script src="./js/sld.js?v=3.4.0"></script>
-  <script src="./js/ga.js?v=3.4.0"></script>
-  <script src="./js/explain.js?v=3.4.0"></script>
-  <script src="./js/help.js?v=3.4.0"></script>
-  <script src="./js/report.js?v=3.4.0"></script>
-  <script src="./js/xlsx-template-data.js?v=3.4.0"></script>
-  <script src="./js/xlsx-export.js?v=3.4.0"></script>
-  <script src="./js/app.js?v=3.4.0"></script>
+  <script src="./js/physics.js?v=3.5.0"></script>
+  <script src="./js/catalog.js?v=3.5.0"></script>
+  <script src="./js/state.js?v=3.5.0"></script>
+  <script src="./js/sld.js?v=3.5.0"></script>
+  <script src="./js/ga.js?v=3.5.0"></script>
+  <script src="./js/explain.js?v=3.5.0"></script>
+  <script src="./js/help.js?v=3.5.0"></script>
+  <script src="./js/report.js?v=3.5.0"></script>
+  <script src="./js/xlsx-template-data.js?v=3.5.0"></script>
+  <script src="./js/xlsx-export.js?v=3.5.0"></script>
+  <script src="./js/app.js?v=3.5.0"></script>
 </body>
 </html>

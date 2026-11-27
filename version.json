@@ -1,5 +1,5 @@
 {
-  "version": "3.4.0",
+  "version": "3.5.0",
   "released": "2026-11-27",
-  "notes": "Reverse Detailed -> Simple Mode sync, interactive Calculation Help & Step-by-Step Breakdown modal with full source references, and live formula-driven step-by-step worked breakdown on Excel 08_Calc_Help_&_Method."
+  "notes": "1P / 2P (Double Pole) / 3P automatic pole & fuse-count power-loss scaling across Web App and Excel, plus full responsive mobile UI with collapsible menu, slide-over Inspector drawer, and touch pinch-to-zoom."
 }

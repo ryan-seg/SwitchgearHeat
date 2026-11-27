@@ -196,9 +196,9 @@ window.SGGA = (function () {
                    <rect x="${doorX + doorW - 7}" y="${ty + th / 2 - 7}" width="3" height="14" rx="1" fill="#64748b" />
                    ${
                      th >= 44
-                       ? `<text x="${doorX + 6}" y="${ty + 16}" fill="${tr.isActive ? P.textMain : P.textMuted}" font-size="10" font-weight="700" font-family="Inter, sans-serif">${esc(truncate(tr.tier.tag, 12))}${tr.tier.phases === '1P' ? ' [1P]' : ''}</text>
+                       ? `<text x="${doorX + 6}" y="${ty + 16}" fill="${tr.isActive ? P.textMain : P.textMuted}" font-size="10" font-weight="700" font-family="Inter, sans-serif">${esc(truncate(tr.tier.tag, 12))}${tr.tier.phases === '1P' ? ' [1P]' : tr.tier.phases === '2P' ? ' [2P]' : ''}</text>
                           <text x="${doorX + doorW - 22}" y="${ty + 16}" text-anchor="end" fill="${tr.isActive ? P.warmText : P.textDim}" font-size="9.5" font-weight="700" font-family="JetBrains Mono, monospace">${totalW.toFixed(0)}W</text>
-                          <text x="${doorX + 6}" y="${ty + 29}" fill="${P.textMuted}" font-size="8.5" font-family="Inter, sans-serif">${esc(truncate(tr.tier.category + ' ' + tr.tier.ratedCurrentA + 'A' + (tr.tier.phases === '1P' ? ' 1P' : ''), 19))}</text>
+                          <text x="${doorX + 6}" y="${ty + 29}" fill="${P.textMuted}" font-size="8.5" font-family="Inter, sans-serif">${esc(truncate(tr.tier.category + ' ' + tr.tier.ratedCurrentA + 'A' + (tr.tier.phases === '1P' ? ' 1P' : tr.tier.phases === '2P' ? ' 2P' : ''), 19))}</text>
                           <text x="${doorX + 6}" y="${ty + 41}" fill="${tr.isActive ? P.accent : P.textDim}" font-size="9" font-weight="600" font-family="JetBrains Mono, monospace">${tr.isActive ? tr.iOp.toFixed(0) + ' A' : isFuture ? 'FUTURE' : 'OFF'}</text>
                           ${opts.showDimensions ? `<text x="${doorX + doorW - 14}" y="${ty + Math.min(th - 8, 41)}" text-anchor="end" fill="${P.textDim}" font-size="7.8" font-family="JetBrains Mono, monospace">EL+${Math.round(panelHeightMm - tr.yCenterMm)}</text>` : ''}`
                        : `<text x="${doorX + 6}" y="${ty + th / 2 + 3.5}" fill="${P.textMain}" font-size="9" font-weight="600">${esc(tr.tier.tag)} · ${totalW.toFixed(0)}W</text>`

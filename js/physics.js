@@ -175,7 +175,7 @@ window.SGPhysics = (function () {
       const kw = Math.max(0, Number(tier.loadKw) || 0);
       const pf = Math.min(1, Math.max(0.1, Number(tier.powerFactor) || 0.85));
       const eff = Math.min(1, Math.max(0.1, Number(tier.efficiency) || 0.93));
-      if (tier.phases === '1P') {
+      if (tier.phases === '1P' || tier.phases === '2P') {
         const vPh = V / Math.sqrt(3);
         baseAmps = (kw * 1000) / (vPh * pf * eff);
       } else {
@@ -211,6 +211,13 @@ window.SGPhysics = (function () {
     const loadRatio = iOp / iRated;
     const loadRatioSq = loadRatio * loadRatio;
 
+    // Automatic pole / fuse-count scaling when switching a device between 1P, 2P (Double Pole), and 3P:
+    // Resistive fuse links / breaker poles scale linearly with active poles (activePoles / nativePoles),
+    // while fixed coils/electronics and VSD IGBT stages do not scale by fuse count.
+    const activePoles = device.phases === '1P' ? 1 : device.phases === '2P' ? 2 : 3;
+    const nativePoles = Number(device.templatePoles) || (String(device.templateId || '').includes('1p') ? 1 : 3);
+    const poleScale = device.role === 'feeder' ? activePoles / nativePoles : 1;
+
     let pFixedW = 0;
     let pVarW = 0;
     const breakdown = [];
@@ -229,10 +236,10 @@ window.SGPhysics = (function () {
           variable = pNom * (0.25 + 0.75 * r); // realistic IGBT switching + conduction curve
         } else if (sc.lossModel === 'bypassed_soft_starter') {
           // Soft starter with internal bypass contactor: low running loss (bypass poles)
-          variable = Math.max(0, Number(sc.ratedLossW) || 0) * rSq;
+          variable = Math.max(0, Number(sc.ratedLossW) || 0) * rSq * poleScale;
         } else {
-          // Standard Joule scaling (IEC TR 60890): P = P_n * (I_op / I_n)^2
-          variable = Math.max(0, Number(sc.ratedLossW) || 0) * rSq;
+          // Standard Joule scaling (IEC TR 60890): P = P_n * (I_op / I_n)^2 * (activePoles / nativePoles)
+          variable = Math.max(0, Number(sc.ratedLossW) || 0) * rSq * poleScale;
         }
 
         pFixedW += fixed;
@@ -249,7 +256,7 @@ window.SGPhysics = (function () {
       if (device.lossModel === 'vsd_efficiency') {
         pVarW = Math.max(0, Number(device.ratedLossW) || 0) * (0.25 + 0.75 * loadRatio);
       } else {
-        pVarW = Math.max(0, Number(device.ratedLossW) || 0) * loadRatioSq;
+        pVarW = Math.max(0, Number(device.ratedLossW) || 0) * loadRatioSq * poleScale;
       }
       breakdown.push({
         name: device.name || device.category,
@@ -264,6 +271,9 @@ window.SGPhysics = (function () {
       iRated,
       loadRatio,
       loadRatioSq,
+      activePoles,
+      nativePoles,
+      poleScale,
       pFixedW,
       pVarW,
       pTotalW: pFixedW + pVarW,
@@ -394,9 +404,9 @@ window.SGPhysics = (function () {
             tier.takeoffBusbar || vbbSpec,
             freqHz
           );
-          if (tier.phases === '1P') {
+          if (tier.phases === '1P' || tier.phases === '2P') {
             const tailLoss = 2 * iOp * iOp * takeoffRes.rAcT * takeoffTailM;
-            const jointLoss = 2 * iOp * iOp * jointR_ohm; // 1P + N joints
+            const jointLoss = 2 * iOp * iOp * jointR_ohm; // 2-wire L+N (1P or 2P DP) joints
             takeoffLossW = tailLoss + jointLoss;
           } else {
             const tailLoss = calcBusbarLossPerMetre(takeoffRes, iOp, poles, neutralRatio).wPerMTotal * takeoffTailM;
@@ -432,7 +442,7 @@ window.SGPhysics = (function () {
       let colInterconnectorA = 0;
       tierResults.forEach((tr) => {
         if (tr.tier.role === 'feeder' && tr.isActive) {
-          colLocalRawA += tr.tier.phases === '1P' ? tr.iOp / 3 : tr.iOp;
+          colLocalRawA += (tr.tier.phases === '1P' || tr.tier.phases === '2P') ? tr.iOp / 3 : tr.iOp;
         } else if (tr.tier.role === 'interconnector' && tr.isActive) {
           colInterconnectorA += tr.iOp;
         }
@@ -628,7 +638,7 @@ window.SGPhysics = (function () {
       const tierEffectiveAmps = loadTiers.map((tr) => {
         if (!tr.isActive) return 0;
         if (tr.tier.role === 'interconnector') return tr.iOp;
-        const busEquivA = tr.tier.phases === '1P' ? tr.iOp / 3 : tr.iOp;
+        const busEquivA = (tr.tier.phases === '1P' || tr.tier.phases === '2P') ? tr.iOp / 3 : tr.iOp;
         return busEquivA * boardRdf;
       });
 
@@ -1145,6 +1155,7 @@ window.SGPhysics = (function () {
             fixedLossW: tpl.fixedLossW || 0,
             subComponents: tpl.subComponents ? JSON.parse(JSON.stringify(tpl.subComponents)) : null,
             phases: cellPhase,
+            templatePoles: tpl.phases === '1P' ? 1 : tpl.phases === '2P' ? 2 : 3,
             loadInputMode: hasManualAmps ? 'amps' : (tpl.defaultKw ? 'kw' : 'amps'),
             loadKw: tpl.defaultKw || 0,
             operatingCurrentA: hasManualAmps ? Math.max(0, Number(rawLoad)) : Math.round(tpl.ratedCurrentA * loadPct),

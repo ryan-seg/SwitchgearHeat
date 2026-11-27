@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '3.4.0';
+  const APP_VERSION = '3.5.0';
 
   function loadInitialProject() {
     try {
@@ -349,6 +349,35 @@
       const isInteractive = e.target.closest('[data-select-type], [data-action], [data-quick-del-tier], [data-quick-del-col]');
       if (!isInteractive) fitZoom(which);
     });
+
+    // Touch pinch-to-zoom on mobile / tablets
+    let pinchDist = 0;
+    let pinchStartZoom = 1;
+    container.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length === 2) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          pinchDist = Math.hypot(dx, dy);
+          pinchStartZoom = which === 'sld' ? sldZoom : gaZoom;
+        }
+      },
+      { passive: true }
+    );
+    container.addEventListener(
+      'touchmove',
+      (e) => {
+        if (e.touches.length === 2 && pinchDist > 10) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const dist = Math.hypot(dx, dy);
+          setZoom(which, pinchStartZoom * (dist / pinchDist));
+        }
+      },
+      { passive: false }
+    );
   }
 
   // --- SLD & GA Views ---
@@ -1353,12 +1382,13 @@
               <div class="insp-section-title">Actual Connected Load (Independent of Device Rating)</div>
               <div class="form-grid-3">
                 <div class="field">
-                  ${lbl('Supply Phases', 'tier.loadMode')}
+                  ${lbl('Supply Phases / Poles', 'tier.loadMode')}
                   <select id="t-phases">
-                    <option value="3P" ${tier.phases !== '1P' ? 'selected' : ''}>3-Phase (${project.config.voltageV}V)</option>
-                    <option value="1P" ${tier.phases === '1P' ? 'selected' : ''}>1-Phase (${Math.round(project.config.voltageV / Math.sqrt(3))}V)</option>
+                    <option value="3P" ${tier.phases !== '1P' && tier.phases !== '2P' ? 'selected' : ''}>3-Phase (3P · 3 Fuses)</option>
+                    <option value="2P" ${tier.phases === '2P' ? 'selected' : ''}>Double Pole (2P · 2 Fuses)</option>
+                    <option value="1P" ${tier.phases === '1P' ? 'selected' : ''}>1-Phase (1P · 1 Fuse)</option>
                   </select>
-                  <span class="field-hint">3P motor or 1P load</span>
+                  <span class="field-hint">Auto-scales fuse/pole loss</span>
                 </div>
                 <div class="field">
                   ${lbl('Load Entry', 'tier.loadMode')}
@@ -1400,14 +1430,15 @@
                     </div>`
               }
               <div class="load-summary-strip ${tr.isActive && tr.iOp > tier.ratedCurrentA * 1.001 ? 'overload' : ''}">
-                <span><strong>Actual I_op:</strong> ${tr.iOp.toFixed(1)} A (${(dl.loadRatio * 100).toFixed(1)}% of ${tier.ratedCurrentA} A ${tier.frameSize ? esc(tier.frameSize) : 'device'}) · ${tier.phases === '1P' ? '1P ' + Math.round(project.config.voltageV / Math.sqrt(3)) + 'V' : '3P ' + project.config.voltageV + 'V'}</span>
+                <span><strong>Actual I_op:</strong> ${tr.iOp.toFixed(1)} A (${(dl.loadRatio * 100).toFixed(1)}% of ${tier.ratedCurrentA} A ${tier.frameSize ? esc(tier.frameSize) : 'device'}) · ${tier.phases === '1P' ? '1P ' + Math.round(project.config.voltageV / Math.sqrt(3)) + 'V (1 fuse)' : tier.phases === '2P' ? '2P DP ' + Math.round(project.config.voltageV / Math.sqrt(3)) + 'V (2 fuses)' : '3P ' + project.config.voltageV + 'V (3 fuses)'}</span>
                 ${(() => {
                   const V = Number(project.config.voltageV || 400);
                   const pf = Math.min(1, Math.max(0.1, Number(tier.powerFactor) || 0.85));
                   const eff = Math.min(1, Math.max(0.1, Number(tier.efficiency) || 0.93));
                   const duty = tier.loadFactor != null ? Number(tier.loadFactor) : 1.0;
+                  const is1or2P = tier.phases === '1P' || tier.phases === '2P';
                   const baseA = tier.loadInputMode === 'kw'
-                    ? (tier.phases === '1P' ? (Number(tier.loadKw || 0) * 1000) / ((V / Math.sqrt(3)) * pf * eff) : (Number(tier.loadKw || 0) * 1000) / (Math.sqrt(3) * V * pf * eff))
+                    ? (is1or2P ? (Number(tier.loadKw || 0) * 1000) / ((V / Math.sqrt(3)) * pf * eff) : (Number(tier.loadKw || 0) * 1000) / (Math.sqrt(3) * V * pf * eff))
                     : Number(tier.operatingCurrentA || 0);
                   const isFutSc = project.activeScenario === 'normal_future' || project.activeScenario === 'worst_case';
                   const futPct = isFutSc && tier.status === 'active' ? (Number(project.config.globalFutureGrowthPct) || 0) : 0;
@@ -1416,7 +1447,7 @@
                   if (futPct > 0) parts.push(`× Future +${futPct}% (scenario)`);
                   return `<span style="color:var(--text-2);">${parts.join(' ')} = ${tr.iOp.toFixed(1)} A</span>`;
                 })()}
-                ${tier.phases === '1P' ? `<span style="color:var(--text-2);">3P Busbar/Incomer equivalent: ${(tr.iOp / 3).toFixed(1)} A/ph · 2-wire L+N take-off</span>` : ''}
+                ${(tier.phases === '1P' || tier.phases === '2P') ? `<span style="color:var(--text-2);">3P Busbar/Incomer equivalent: ${(tr.iOp / 3).toFixed(1)} A/ph · 2-wire L+N take-off${dl.poleScale && Math.abs(dl.poleScale - 1) > 0.01 ? ` · Fuse/Pole scale: ${dl.activePoles}/${dl.nativePoles}` : ''}</span>` : ''}
               </div>
             </div>`
           : ''
@@ -1475,7 +1506,7 @@
 
               <div class="calc-readout explainable" id="tier-calc-readout" title="Click to inspect step-by-step operating vs rated loss calculation">
                 <div class="calc-row"><span class="lbl">Operating Current Iop:</span><span class="val">${tr.iOp.toFixed(1)} A (${(dl.loadRatio * 100).toFixed(0)}% of ${tier.ratedCurrentA}A)</span></div>
-                <div class="calc-row"><span class="lbl">Joule Scaling (Iop/In)²:</span><span class="val">${dl.loadRatioSq.toFixed(3)}</span></div>
+                <div class="calc-row"><span class="lbl">Joule Scaling (Iop/In)²:</span><span class="val">${dl.loadRatioSq.toFixed(3)}${dl.poleScale && Math.abs(dl.poleScale - 1) > 0.01 ? ` × ${dl.activePoles}/${dl.nativePoles}P` : ''}</span></div>
                 <div class="calc-row"><span class="lbl">Device Variable + Fixed:</span><span class="val">${dl.pVarW.toFixed(1)} W + ${dl.pFixedW.toFixed(1)} W = ${dl.pTotalW.toFixed(1)} W</span></div>
                 <div class="calc-row"><span class="lbl">Take-off Tail &amp; Joint:</span><span class="val">${(tr.takeoffLossW || 0).toFixed(1)} W (EL +${Math.round(project.config.panelHeightMm - tr.yCenterMm)} mm)</span></div>
                 ${tr.cableLoss && tr.cableLoss.totalW > 0 ? `<div class="calc-row"><span class="lbl">Interconn Cable Loss:</span><span class="val">${tr.cableLoss.totalW.toFixed(1)} W (${tr.cableLoss.wPerM.toFixed(1)} W/m)</span></div>` : ''}
@@ -1597,6 +1628,7 @@
       if (c.phases) {
         tier.phases = c.phases;
       }
+      tier.templatePoles = c.phases === '1P' ? 1 : c.phases === '2P' ? 2 : 3;
       // Preserve user's entered actual load (e.g. 75 kW motor when swapping to a 160A HRC fuse);
       // only populate defaultKw if no actual load has been entered yet.
       if (c.defaultKw && !hadExistingLoad) {
@@ -2840,14 +2872,15 @@
                                    isFeederCell
                                      ? `<div class="sm-cell-override" title="Optional actual operating current (A) — leave blank for automatic ${sm.avgLoadPct}% rule-of-thumb">
                                          <input type="number" data-sm-cell-amps="${cIdx}:${tIdx}" value="${ovAmps}" min="0" step="1" placeholder="Auto A" />
-                                         <select data-sm-cell-phase="${cIdx}:${tIdx}" title="Supply phases (3P 400V or 1P 230V)">
-                                           <option value="3P" ${ovPhase !== '1P' ? 'selected' : ''}>3P</option>
+                                         <select data-sm-cell-phase="${cIdx}:${tIdx}" title="Supply poles/fuses (3P = 3 fuses, 2P = 2 fuses DP, 1P = 1 fuse)">
+                                           <option value="3P" ${ovPhase !== '1P' && ovPhase !== '2P' ? 'selected' : ''}>3P</option>
+                                           <option value="2P" ${ovPhase === '2P' ? 'selected' : ''}>2P</option>
                                            <option value="1P" ${ovPhase === '1P' ? 'selected' : ''}>1P</option>
                                          </select>
                                        </div>`
                                      : ''
                                  }
-                                 ${cellInfo ? `<div class="sm-tier-badge"><span>${cellInfo.iOp.toFixed(0)} A${ovPhase === '1P' && isFeederCell ? ' 1P' : ''}</span><span class="w">${cellInfo.totalW.toFixed(0)} W</span></div>` : ''}
+                                 ${cellInfo ? `<div class="sm-tier-badge"><span>${cellInfo.iOp.toFixed(0)} A${(ovPhase === '1P' || ovPhase === '2P') && isFeederCell ? ' ' + ovPhase : ''}</span><span class="w">${cellInfo.totalW.toFixed(0)} W</span></div>` : ''}
                                </td>`;
                              }).join('')}
                            </tr>
@@ -3340,6 +3373,29 @@
       const activeSc = allScenarios.find((s) => s.id === project.activeScenario) || allScenarios[0];
       triggerConfiguredPrint(activeSc.result, allScenarios);
     });
+
+    // Mobile Menu & Slide-Over Inspector Drawer controls
+    const btnMobMenu = document.getElementById('btn-mobile-menu');
+    const topActions = document.querySelector('.topbar-actions');
+    if (btnMobMenu && topActions) {
+      btnMobMenu.addEventListener('click', () => {
+        const isOpen = topActions.classList.toggle('mobile-open');
+        btnMobMenu.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        btnMobMenu.textContent = isOpen ? '✕ Close' : '☰ Menu';
+      });
+    }
+    const inspPanel = document.getElementById('inspector-panel');
+    const inspBackdrop = document.getElementById('mobile-inspector-backdrop');
+    const btnMobInsp = document.getElementById('btn-mobile-inspector');
+    const btnCloseInsp = document.getElementById('btn-close-inspector');
+    const setMobileInspOpen = (open) => {
+      if (!inspPanel || !inspBackdrop) return;
+      inspPanel.classList.toggle('mobile-open', open);
+      inspBackdrop.classList.toggle('open', open);
+    };
+    if (btnMobInsp) btnMobInsp.addEventListener('click', () => setMobileInspOpen(true));
+    if (btnCloseInsp) btnCloseInsp.addEventListener('click', () => setMobileInspOpen(false));
+    if (inspBackdrop) inspBackdrop.addEventListener('click', () => setMobileInspOpen(false));
 
     // Calculation Help & Step-by-Step Breakdown Modal + Privacy Modal
     const btnCalcHelp = document.getElementById('btn-calc-help');

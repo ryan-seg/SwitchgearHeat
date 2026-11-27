@@ -43,6 +43,7 @@ window.SGState = (function () {
         powerFactor: 0.85,
         efficiency: 0.93,
         phases: cloned.phases || '3P',
+        templatePoles: cloned.phases === '1P' ? 1 : cloned.phases === '2P' ? 2 : 3,
         loadFactor: 1.0,
         // Special fields for incomer / coupler / interconnector
         incomerState: 'closed', // 'closed' | 'open'
