@@ -471,6 +471,21 @@ window.SGXlsxExport = (function () {
     setCellValue(docSmp, mapSmp, 'B17', Math.max(0.2, Math.min(1.0, Number(sm.rdf) || 0.9)));
     setCellValue(docSmp, mapSmp, 'B18', Math.max(0, (Number(sm.futureGrowthPct) || 20) / 100));
     setCellValue(docSmp, mapSmp, 'B19', Math.max(0, Number(sm.n1TransferA) || 850));
+    setCellValue(docSmp, mapSmp, 'B20', sm.inputStyle === 'counts' ? 'Quick Counts' : 'Tier Grid');
+    const smGrid = Array.isArray(sm.tierGrid) ? sm.tierGrid : [];
+    const smColLetters = ['B', 'C', 'D', 'E', 'F', 'G'];
+    for (let tIdx = 0; tIdx < 6; tIdx++) {
+      for (let cIdx = 0; cIdx < 6; cIdx++) {
+        const ref = `${smColLetters[cIdx]}${49 + tIdx}`;
+        const gCol = smGrid[cIdx];
+        const tplId = gCol && Array.isArray(gCol.tiers) ? gCol.tiers[tIdx] : '';
+        if (tplId) {
+          setCellValue(docSmp, mapSmp, ref, ensureLibraryMatch(findTpl(tplId), ''));
+        } else {
+          setCellValue(docSmp, mapSmp, ref, '');
+        }
+      }
+    }
 
     // 3. Patch 01_Summary (sheet2.xml)
     const isSimple = project.uiMode === 'simple';

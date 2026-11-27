@@ -466,6 +466,8 @@ def generate_workbook():
          "Typ: 15%–25% allowance for Future scenarios. Seeds Detailed Mode!"),
         (19, "N-1 Interconnector Transfer Load (A→B)", 850, "A", "#,##0",
          "Typ: 600–1600 A supplied to B-side firm-supply board during N-1 outage"),
+        (20, "Simple Mode Calculation Basis", "Tier Grid", "-", "@",
+         "Tier Grid = uses Section D Column × Tier Grid below | Quick Counts = uses Qty inputs (B10:B15)"),
     ]
     for r, name, val, unit, nf, hint in smp_inputs:
         ws_smp.row_dimensions[r].height = 20
@@ -516,10 +518,74 @@ def generate_workbook():
     # Simple Mode Dropdowns
     dv_sm_bb = DataValidation(type="list", formula1="=$A$37:$A$45", allow_blank=False)
     dv_sm_topo = DataValidation(type="list", formula1='"Single Incomer,Single Incomer + Interconnector (A→B),Dual Incomer + Bus Coupler"', allow_blank=False)
-    dv_sm_lib = DataValidation(type="list", formula1=f"={lib_name_rng}", allow_blank=False)
+    dv_sm_lib = DataValidation(type="list", formula1=f"={lib_name_rng}", allow_blank=True)
+    dv_sm_basis = DataValidation(type="list", formula1='"Tier Grid,Quick Counts"', allow_blank=False)
     ws_smp.add_data_validation(dv_sm_bb); dv_sm_bb.add("B6")
     ws_smp.add_data_validation(dv_sm_topo); dv_sm_topo.add("B7")
-    ws_smp.add_data_validation(dv_sm_lib); dv_sm_lib.add("B11"); dv_sm_lib.add("B13"); dv_sm_lib.add("B15")
+    ws_smp.add_data_validation(dv_sm_lib); dv_sm_lib.add("B11"); dv_sm_lib.add("B13"); dv_sm_lib.add("B15"); dv_sm_lib.add("B49:G54")
+    ws_smp.add_data_validation(dv_sm_basis); dv_sm_basis.add("B20")
+
+    # Section D: Tier-by-Tier Quick Device Grid (Rows 47..56 — Rules-of-Thumb Column x Tier Matrix!)
+    style_section_bar(ws_smp, 47, 1, 7, "D. TIER-BY-TIER QUICK DEVICE GRID (BLUE CELLS = PICK DEVICE PER TIER · RULES OF THUMB)")
+    ws_smp.row_dimensions[48].height = 22
+    for ci, hdr in enumerate(["Tier / Slot", "COL-01", "COL-02", "COL-03", "COL-04", "COL-05", "COL-06"], 1):
+        c = ws_smp.cell(48, ci, hdr); c.font = FONT_HEADER; c.fill = FILL_HEADER; c.alignment = ALIGN_C; c.border = BORDER_CELL
+
+    sm_grid_defaults = [
+        # (tier_row_idx 0..5): [COL-01 .. COL-06]
+        ["ACB Incomer 2500A Drawout (3P/4P)", "DOL Starter 55 kW (160A frame)", "Star-Delta Starter 75 kW (200A frame)", "Eaton 400NHG2B — 400A NH2 gG HRC (30.0W/link)", "Interconnector ACB 1250A Drawout (3P/4P)", ""],
+        ["", "DOL Starter 37 kW (100A frame)", "VSD / Inverter Drive 45 kW (2.8% loss)", "MCCB 250A (3P Electronic)", "", ""],
+        ["", "DOL Starter 22 kW (63A frame)", "Soft Starter 30 kW (Bypassed, 80A)", "MCCB 160A (3P Electronic)", "", ""],
+        ["", "DOL Starter 15 kW (40A frame)", "", "Eaton 250NHG1B — 250A NH1 gG HRC (19.0W/link)", "", ""],
+        ["", "", "", "", "", ""],
+        ["", "", "", "", "", ""],
+    ]
+    lib_role_rng = f"'06_Device_&_Fuse_Library'!$F${LIB_START}:$F${LIB_END}"
+    lib_sz_rng   = f"'06_Device_&_Fuse_Library'!$E${LIB_START}:$E${LIB_END}"
+    for t_idx in range(6):
+        r_g = 49 + t_idx
+        ws_smp.row_dimensions[r_g].height = 20
+        ct_l = ws_smp.cell(r_g, 1, f"Tier {t_idx + 1}")
+        ct_l.font = FONT_CALC_BOLD; ct_l.fill = FILL_ZEBRA; ct_l.alignment = ALIGN_C; ct_l.border = BORDER_CELL
+        for c_idx in range(6):
+            cc = 2 + c_idx
+            cl = get_column_letter(cc)
+            cell = ws_smp.cell(r_g, cc, sm_grid_defaults[t_idx][c_idx])
+            cell.font = FONT_INPUT; cell.fill = FILL_INPUT; cell.alignment = ALIGN_L; cell.border = BORDER_CELL
+
+            # Hidden helper columns I..N (9..14): Rule-of-Thumb Normal Amps per cell (1P weighted /3 on 3P bus)
+            h_i_col = 9 + c_idx
+            role_e = f"IFERROR(INDEX({lib_role_rng},MATCH({cl}{r_g},{lib_name_rng},0)),\"\")"
+            in_e   = f"IFERROR(INDEX({lib_in_rng},MATCH({cl}{r_g},{lib_name_rng},0)),0)"
+            pn_e   = f"IFERROR(INDEX({lib_pn_rng},MATCH({cl}{r_g},{lib_name_rng},0)),0)"
+            fx_e   = f"IFERROR(INDEX({lib_fix_rng},MATCH({cl}{r_g},{lib_name_rng},0)),0)"
+            mod_e  = f"IFERROR(INDEX({lib_mod_rng},MATCH({cl}{r_g},{lib_name_rng},0)),\"quadratic\")"
+            is1p_e = f"ISNUMBER(SEARCH(\"1P\",IFERROR(INDEX({lib_sz_rng},MATCH({cl}{r_g},{lib_name_rng},0)),\"\")))"
+            ws_smp.cell(r_g, h_i_col, f"=IF(OR({cl}{r_g}=\"\",{role_e}<>\"Feeder\"),0,{in_e}*0.68*$B$16/IF({is1p_e},3,1))")
+
+            # Hidden helper columns P..U (16..21): Rule-of-Thumb Normal Device Loss (W) per cell
+            h_w_col = 16 + c_idx
+            ws_smp.cell(r_g, h_w_col,
+                f"=IF(OR({cl}{r_g}=\"\",{role_e}=\"Incomer\",{role_e}=\"Interconnector\"),0,"
+                f"IF({role_e}=\"Spare / Placeholder\",{fx_e},"
+                f"{fx_e}+IF({mod_e}=\"vsd\",{pn_e}*(0.25+0.75*0.72*$B$16),{pn_e}*((0.68*$B$16)^2))))"
+            )
+
+    # Row 55: Column Rule-of-Thumb Load (A) & Row 56: Column Rule-of-Thumb Device Heat (W)
+    ws_smp.row_dimensions[55].height = 20; ws_smp.row_dimensions[56].height = 20
+    ws_smp.cell(55, 1, "Est. Column Feeder Load (A, w/ RDF)").font = FONT_CALC_BOLD; ws_smp.cell(55, 1).fill = FILL_ZEBRA; ws_smp.cell(55, 1).border = BORDER_CELL
+    ws_smp.cell(56, 1, "Est. Column Device Heat (W, Normal)").font = FONT_TOTAL; ws_smp.cell(56, 1).fill = FILL_TOTAL; ws_smp.cell(56, 1).border = BORDER_TOTAL
+    for c_idx in range(6):
+        cc = 2 + c_idx
+        hi_l = get_column_letter(9 + c_idx)
+        hw_l = get_column_letter(16 + c_idx)
+        c55 = ws_smp.cell(55, cc, f"=SUM({hi_l}49:{hi_l}54)*$B$17")
+        c55.font = FONT_CALC_BOLD; c55.fill = FILL_WHITE; c55.alignment = ALIGN_R; c55.border = BORDER_CELL; c55.number_format = "#,##0.0\" A\""
+        c56 = ws_smp.cell(56, cc, f"=SUM({hw_l}49:{hw_l}54)")
+        c56.font = FONT_TOTAL; c56.fill = FILL_HERO; c56.alignment = ALIGN_R; c56.border = BORDER_TOTAL; c56.number_format = "#,##0.0\" W\""
+
+    for hc in range(9, 22):
+        ws_smp.column_dimensions[get_column_letter(hc)].hidden = True
 
     # Section B: Simple Mode Live 4-Scenario Outputs (Rows 21..27) + Quick Room Cooling Verdict Link (Rows 29..33)
     style_section_bar(ws_smp, 21, 1, 7, "B. SIMPLE MODE RAPID HEAT OUTPUT ESTIMATE (4 SCENARIOS LIVE)")
@@ -551,18 +617,22 @@ def generate_workbook():
     for r, sc_lbl, is_fut, is_n1 in sm_sc_defs:
         ws_smp.row_dimensions[r].height = 21
         mul = "(1+$B$18)" if is_fut else "1"
-        ic_a = "IF($B$7=\"Single Incomer + Interconnector (A→B)\",$B$19,0)" if is_n1 else "0"
-        # Local diversified Amps (approximate: each circuit at avgLoad% * 0.72 of frame * mul * RDF)
-        loc_a = f"(($B$10*{sm_dol_in}*0.65+$B$12*{sm_vsd_in}*0.72+$B$14*{sm_fdr_in}*0.70)*$B$16*{mul}*$B$17)"
+        has_grid_ic = "COUNTIF($B$49:$G$54,\"*Interconnector*\")>0"
+        ic_a = f"IF($B$20=\"Tier Grid\",IF({has_grid_ic},$B$19,0),IF($B$7=\"Single Incomer + Interconnector (A→B)\",$B$19,0))" if is_n1 else "0"
+        # Local diversified Amps: Tier Grid (sum of Section D grid × mul) vs Quick Counts
+        loc_a_cnt = f"(($B$10*{sm_dol_in}*0.65+$B$12*{sm_vsd_in}*0.72+$B$14*{sm_fdr_in}*0.70)*$B$16*{mul}*$B$17)"
+        loc_a_grd = f"(SUM($B$55:$G$55)*{mul})"
+        loc_a = f"IF($B$20=\"Tier Grid\",{loc_a_grd},{loc_a_cnt})"
         ws_smp.cell(r, 1, sc_lbl).font = FONT_CALC_BOLD
         ws_smp.cell(r, 6, f"={loc_a}+{ic_a}").number_format = "#,##0.0"
         # Devices + Incomer + Interconnector W
         dol_w = f"($B$10*({sm_dol_fx}+{sm_dol_pn}*((0.65*$B$16*{mul})^2)))"
         vsd_w = f"($B$12*({sm_vsd_fx}+{sm_vsd_pn}*(0.25+0.75*(0.72*$B$16*{mul}))))"
         fdr_w = f"($B$14*({sm_fdr_fx}+{sm_fdr_pn}*((0.70*$B$16*{mul})^2)))"
+        grd_w = f"(SUM($B$56:$G$56)*({mul}^1.6))"
         inc_w = f"(18+IF({sm_in}>=2500,480,260)*((F{r}/MAX(1,{sm_in}))^2))"
-        ic_w  = f"IF({ic_a}>0,15+260*(({ic_a}/1600)^2)+3*({ic_a}^2)*(0.017241*1.1965/720)*1.05*2.5,0)"
-        ws_smp.cell(r, 5, f"={dol_w}+{vsd_w}+{fdr_w}+{inc_w}+{ic_w}").number_format = "#,##0.0"
+        ic_w  = f"IF({ic_a}>0,15+195*(({ic_a}/1250)^2)+3*({ic_a}^2)*(0.017241*1.1965/720)*1.05*2.5,0)"
+        ws_smp.cell(r, 5, f"=IF($B$20=\"Tier Grid\",{grd_w},{dol_w}+{vsd_w}+{fdr_w})+{inc_w}+{ic_w}").number_format = "#,##0.0"
         # Busbars + Joints W (RMS tapered HBB + VBB + splice joints)
         hbb_rms_sq = f"(({loc_a}^2)/3+({ic_a}^2)+{loc_a}*{ic_a})"
         bus_w = f"(3*{hbb_rms_sq}*{sm_rac}*0.000001*{sm_len} + 3*({loc_a}/MAX(1,$B$8-1)*0.65)^2*'02_Board_&_Busbars'!$C$60*0.000001*MAX(1,($B$8-1)*1.3) + 3*{hbb_rms_sq}*'02_Board_&_Busbars'!$B$23*0.000001*MAX(1,$B$8-1))"
@@ -1243,43 +1313,62 @@ def generate_workbook():
     configure_print(ws_seg, landscape=True, fit_width=1)
 
     # =========================================================================
-    # SHEET 05a: 05a_Live_SLD_HeatMap (LIVE VISUAL SINGLE LINE DIAGRAM + HEAT MAP!)
+    # SHEET 05a: 05a_Live_SLD_HeatMap (GRAPHICAL CAD-STYLE SLD + HEAT MAP + CHART!)
     # =========================================================================
+    ws_sld.views.sheetView[0].showGridLines = False
     key_rng  = f"'03_Feeder_Schedule'!$AH${FEED_START}:$AH${FEED_END}"
     tag_rng  = f"'03_Feeder_Schedule'!$C${FEED_START}:$C${FEED_END}"
     role_rng = f"'03_Feeder_Schedule'!$E${FEED_START}:$E${FEED_END}"
     stat_rng = f"'03_Feeder_Schedule'!$F${FEED_START}:$F${FEED_END}"
     tpl_rng  = f"'03_Feeder_Schedule'!$G${FEED_START}:$G${FEED_END}"
     ht_rng   = f"'03_Feeder_Schedule'!$H${FEED_START}:$H${FEED_END}"
+    lmod_rng = f"'03_Feeder_Schedule'!$I${FEED_START}:$I${FEED_END}"
     iop_rng  = f"'03_Feeder_Schedule'!$S${FEED_START}:$S${FEED_END}"
     el_rng   = f"'03_Feeder_Schedule'!$R${FEED_START}:$R${FEED_END}"
     w_rng    = f"'03_Feeder_Schedule'!$Y${FEED_START}:$Y${FEED_END}"
     col_rng  = f"'03_Feeder_Schedule'!$A${FEED_START}:$A${FEED_END}"
 
+    FILL_CANVAS = PatternFill("solid", fgColor="F1F5F9")
+    FILL_BUS_CU = PatternFill("solid", fgColor="FDE68A")
+    FILL_SPINE  = PatternFill("solid", fgColor="E2E8F0")
+    FILL_CARD_H = PatternFill("solid", fgColor="1E293B")
+    FONT_CARD_H = Font(name=FONT_FAMILY, size=9, bold=True, color="FFFFFF")
+    FONT_BUS    = Font(name="Consolas", size=9, bold=True, color="78350F")
+    FONT_SPINE  = Font(name="Consolas", size=11, bold=True, color="B45309")
+
+    BORDER_BUS_TOP = Border(top=Side(style="thick", color="B45309"), bottom=Side(style="thick", color="B45309"))
+    BORDER_CARD_T  = Border(top=Side(style="medium", color="1E293B"), left=Side(style="medium", color="1E293B"), right=Side(style="medium", color="1E293B"))
+    BORDER_CARD_M  = Border(left=Side(style="medium", color="1E293B"), right=Side(style="medium", color="1E293B"))
+    BORDER_CARD_B  = Border(bottom=Side(style="medium", color="1E293B"), left=Side(style="medium", color="1E293B"), right=Side(style="medium", color="1E293B"))
+
+    # Paint clean CAD canvas backdrop across A1:Q32
+    for rr in range(4, 33):
+        for cc in range(1, 18):
+            ws_sld.cell(rr, cc).fill = FILL_CANVAS
+
     style_title_banner(
-        ws_sld, 10,
-        "LIVE SINGLE LINE DIAGRAM (SLD) — DYNAMIC ARRANGEMENT & COLOUR-CODED HEAT MAP",
-        "Updates automatically from '03_Feeder_Schedule' & '01_Summary' Active Scenario. Supports Interconnector left/right of Incomer OR stacked in Incomer column tier!"
+        ws_sld, 17,
+        "LIVE SINGLE LINE DIAGRAM (SLD) — GRAPHICAL CAD VIEW & THERMAL HEAT MAP",
+        "Auto-generated live SLD from '03_Feeder_Schedule' & '01_Summary'. Copper HBB/VBB busbars, breaker symbols, heat-mapped compartment cards & live thermal chart."
     )
-    ws_sld.row_dimensions[4].height = 22
-    ws_sld.merge_cells("A4:I4")
+    ws_sld.row_dimensions[4].height = 24
+    ws_sld.merge_cells("A4:Q4")
     c_sld_bar = ws_sld.cell(
         4, 1,
         "=\"SCENARIO: \"&'01_Summary'!C9&\"   |   TOTAL HEAT: \"&TEXT('01_Summary'!A13,\"0.000\")&\" kW   |   HBB: \"&'02_Board_&_Busbars'!B40&\"×\"&'02_Board_&_Busbars'!B41&\"×\"&'02_Board_&_Busbars'!B42&\" mm Cu (\"&'02_Board_&_Busbars'!B38&\"A)   |   COOLING: \"&'07_Room_Ventilation'!B28"
     )
     c_sld_bar.font = FONT_SECTION; c_sld_bar.fill = FILL_SECTION; c_sld_bar.alignment = ALIGN_C
-    for cc in range(1, 10): ws_sld.cell(4, cc).border = BORDER_CELL
+    for cc in range(1, 18): ws_sld.cell(4, cc).border = BORDER_CELL
 
     # SLD Zone Labels (Column A)
     sld_zone_rows = [
-        (5,  20, "INCOMING SUPPLY\n(Transformer Feed)", FILL_ZEBRA),
-        (6,  24, "INCOMER BREAKER\n[ X ] ACB Symbol", FILL_ZEBRA),
-        (7,  20, "Incomer Heat (W)", FILL_WHITE),
-        (8,  22, "COLUMN / BAY", FILL_HEADER),
-        (9,  24, "MAIN HORIZONTAL\nBUSBAR (HBB Spine)", FILL_HERO),
-        (10, 20, "HBB Heat (W/m)", FILL_WHITE),
-        (11, 20, "HBB Span Loss (W)", FILL_WHITE),
-        (12, 22, "VERTICAL DROPPER\n(┬ VBB Heat W)", FILL_ZEBRA),
+        (5,  19, "TX SUPPLY", FILL_ZEBRA),
+        (6,  24, "INCOMER ACB\n[ ✕ ]", FILL_ZEBRA),
+        (7,  18, "Incomer Heat", FILL_WHITE),
+        (8,  22, "CUBICLE BAY", FILL_HEADER),
+        (9,  24, "MAIN BUSBAR\n══ HBB ══", FILL_BUS_CU),
+        (10, 18, "HBB W/m", FILL_WHITE),
+        (11, 18, "VBB Dropper", FILL_ZEBRA),
     ]
     for rr, rh, zlbl, zfill in sld_zone_rows:
         ws_sld.row_dimensions[rr].height = rh
@@ -1287,231 +1376,331 @@ def generate_workbook():
         cz.font = FONT_HEADER if rr == 8 else FONT_CALC_BOLD
         cz.fill = zfill; cz.alignment = ALIGN_C; cz.border = BORDER_CELL
 
-    border_bus = Border(
-        top=Side(style="thick", color=NAVY_DARK),
-        bottom=Side(style="thick", color=NAVY_DARK),
-        left=Side(style="thin", color="94A3B8"),
-        right=Side(style="thin", color="94A3B8"),
-    )
-
+    # 2-Column-Per-Bay CAD Layout: col_sp = 2 + ci*2 (narrow spine), col_cd = 3 + ci*2 (wide card)
     for ci in range(8):
-        col_num = 2 + ci
+        col_sp = 2 + ci * 2
+        col_cd = col_sp + 1
         cr = COL_START + ci
         cid_txt = f"COL-0{ci+1}"
         has_inc_expr = f"COUNTIFS({col_rng},\"{cid_txt}\",{role_rng},\"Incomer\")>0"
         has_col_expr = f"'03_Feeder_Schedule'!C{cr}>0"
 
-        # Row 5: Incoming Transformer arrow if this column has an Incomer
-        c5 = ws_sld.cell(5, col_num, f"=IF({has_inc_expr},\"⚡ TX SUPPLY ▼\",\"\")")
-        c5.font = Font(name=FONT_FAMILY, size=9, bold=True, color="0369A1"); c5.alignment = ALIGN_C; c5.border = BORDER_CELL
+        # Row 5: Incoming Transformer Arrow
+        ws_sld.merge_cells(start_row=5, start_column=col_sp, end_row=5, end_column=col_cd)
+        c5 = ws_sld.cell(5, col_sp, f"=IF({has_inc_expr},\"⚡ TX FEED ▼\",\"\")")
+        c5.font = Font(name=FONT_FAMILY, size=9, bold=True, color="0369A1"); c5.alignment = ALIGN_C
         c5.fill = PatternFill("solid", fgColor="E0F2FE")
 
-        # Row 6: Incomer ACB symbol + live supply Amps
-        c6 = ws_sld.cell(
-            6, col_num,
-            f"=IF({has_inc_expr},\"[ X ] INCOMER · \"&TEXT('03_Feeder_Schedule'!I{cr},\"#,##0\")&\" A\",IF({has_col_expr},\"│\",\"\"))"
-        )
-        c6.font = FONT_CALC_BOLD; c6.alignment = ALIGN_C; c6.border = BORDER_CELL; c6.fill = FILL_WHITE
+        # Row 6: Incomer ACB Breaker Symbol
+        ws_sld.merge_cells(start_row=6, start_column=col_sp, end_row=6, end_column=col_cd)
+        c6 = ws_sld.cell(6, col_sp, f"=IF({has_inc_expr},\"[ ✕ ] ACB · \"&TEXT('03_Feeder_Schedule'!I{cr},\"#,##0\")&\" A\",\"\")")
+        c6.font = FONT_CALC_BOLD; c6.alignment = ALIGN_C; c6.fill = FILL_WHITE; c6.border = BORDER_CARD_T
 
-        # Row 7: Incomer Heat (W) — Heat Map coloured!
-        c7 = ws_sld.cell(7, col_num, f"=SUMIFS({w_rng},{col_rng},\"{cid_txt}\",{role_rng},\"Incomer\")")
-        c7.font = FONT_CALC_BOLD; c7.alignment = ALIGN_C; c7.border = BORDER_CELL; c7.number_format = "#,##0.0\" W\";;\"-\""
+        # Row 7: Incomer Heat (W)
+        ws_sld.merge_cells(start_row=7, start_column=col_sp, end_row=7, end_column=col_cd)
+        c7 = ws_sld.cell(7, col_sp, f"=SUMIFS({w_rng},{col_rng},\"{cid_txt}\",{role_rng},\"Incomer\")")
+        c7.font = FONT_CALC_BOLD; c7.alignment = ALIGN_C; c7.border = BORDER_CARD_B; c7.number_format = "#,##0.0\" W\";;\"\""
 
-        # Row 8: Column Header
-        c8 = ws_sld.cell(8, col_num, f"=IF({has_col_expr},'03_Feeder_Schedule'!B{cr},\"{cid_txt} (Unused)\")")
+        # Row 8: Cubicle Header
+        ws_sld.merge_cells(start_row=8, start_column=col_sp, end_row=8, end_column=col_cd)
+        c8 = ws_sld.cell(8, col_sp, f"=IF({has_col_expr},'03_Feeder_Schedule'!B{cr},\"{cid_txt} (Unused)\")")
         c8.font = FONT_HEADER; c8.fill = FILL_HEADER; c8.alignment = ALIGN_C; c8.border = BORDER_CELL
+        ws_sld.cell(8, col_cd).border = BORDER_CELL
 
-        # Row 9: Main Horizontal Busbar (HBB) graphic + bidirectional current arrow!
+        # Row 9: Thick Copper Main Horizontal Busbar (HBB)
+        ws_sld.merge_cells(start_row=9, start_column=col_sp, end_row=9, end_column=col_cd)
         if ci < 7:
-            c9 = ws_sld.cell(
-                9, col_num,
-                f"=IF('04_Busbar_Segments'!C{HBB_START+ci}>0,\"══ \"&'04_Busbar_Segments'!E{HBB_START+ci}&\" \"&TEXT('04_Busbar_Segments'!D{HBB_START+ci},\"#,##0\")&\" A ══\",IF({has_col_expr},\"═══ HBB END ═══\",\"\"))"
-            )
-            c10 = ws_sld.cell(10, col_num, f"='04_Busbar_Segments'!H{HBB_START+ci}")
-            c11 = ws_sld.cell(11, col_num, f"='04_Busbar_Segments'!K{HBB_START+ci}")
+            c9 = ws_sld.cell(9, col_sp, f"=IF('04_Busbar_Segments'!C{HBB_START+ci}>0,\"══ \"&'04_Busbar_Segments'!E{HBB_START+ci}&\" \"&TEXT('04_Busbar_Segments'!D{HBB_START+ci},\"#,##0\")&\" A ══\",IF({has_col_expr},\"══ HBB END ══\",\"\"))")
+            c10 = ws_sld.cell(10, col_sp, f"='04_Busbar_Segments'!H{HBB_START+ci}")
         else:
-            c9 = ws_sld.cell(9, col_num, f"=IF({has_col_expr},\"═══ HBB END ═══\",\"\")")
-            c10 = ws_sld.cell(10, col_num, 0)
-            c11 = ws_sld.cell(11, col_num, 0)
-        c9.font = Font(name="Consolas", size=9, bold=True, color=NAVY_DARK); c9.alignment = ALIGN_C; c9.border = border_bus; c9.fill = FILL_HERO
+            c9 = ws_sld.cell(9, col_sp, f"=IF({has_col_expr},\"══ HBB END ══\",\"\")")
+            c10 = ws_sld.cell(10, col_sp, 0)
+        c9.font = FONT_BUS; c9.fill = FILL_BUS_CU; c9.alignment = ALIGN_C; c9.border = BORDER_BUS_TOP
+        ws_sld.cell(9, col_cd).border = BORDER_BUS_TOP
+
+        # Row 10: HBB W/m Heat-Mapped
+        ws_sld.merge_cells(start_row=10, start_column=col_sp, end_row=10, end_column=col_cd)
         c10.font = FONT_CALC_BOLD; c10.alignment = ALIGN_C; c10.border = BORDER_CELL; c10.number_format = "0.0\" W/m\";;\"-\""
-        c11.font = FONT_CALC_BOLD; c11.alignment = ALIGN_C; c11.border = BORDER_CELL; c11.number_format = "#,##0.0\" W\";;\"-\""
 
-        # Row 12: Vertical Busbar Dropper (┬ VBB) Heat (W) — Heat Map coloured!
-        c12 = ws_sld.cell(12, col_num, f"='03_Feeder_Schedule'!K{cr}")
-        c12.font = FONT_CALC_BOLD; c12.alignment = ALIGN_C; c12.border = BORDER_CELL; c12.number_format = "\"┬ VBB: \"#,##0.0\" W\";;\"—\""
+        # Row 11: VBB Dropper Tee & Heat (W)
+        c11s = ws_sld.cell(11, col_sp, f"=IF('03_Feeder_Schedule'!K{cr}>0,\"┬\",\"\")")
+        c11s.font = FONT_SPINE; c11s.alignment = ALIGN_C; c11s.fill = FILL_SPINE
+        c11c = ws_sld.cell(11, col_cd, f"='03_Feeder_Schedule'!K{cr}")
+        c11c.font = FONT_CALC_BOLD; c11c.alignment = ALIGN_C; c11c.border = BORDER_CELL; c11c.number_format = "\"VBB: \"#,##0.0\" W\";;\"—\""
 
-    # Rows 13..28: 8 Live SLD Branch Tiers (2 rows per tier: Graphic/Tag/Amps + Heat W Heat-Mapped!)
-    for tier_n in range(1, 9):
-        r_sym = 13 + (tier_n - 1) * 2
-        r_w   = r_sym + 1
-        ws_sld.row_dimensions[r_sym].height = 30
-        ws_sld.row_dimensions[r_w].height = 19
+    # Rows 12..29: 6 Graphical CAD Compartment Cards (3 rows per tier: Tag Header, Symbol+Amps, Heat-Mapped Watts!)
+    for tier_n in range(1, 7):
+        r_h = 12 + (tier_n - 1) * 3
+        r_m = r_h + 1
+        r_w = r_h + 2
+        ws_sld.row_dimensions[r_h].height = 17
+        ws_sld.row_dimensions[r_m].height = 22
+        ws_sld.row_dimensions[r_w].height = 18
 
-        c_l1 = ws_sld.cell(r_sym, 1, f"Tier {tier_n}\nBranch & Load")
-        c_l1.font = FONT_CALC_BOLD; c_l1.fill = FILL_ZEBRA; c_l1.alignment = ALIGN_C; c_l1.border = BORDER_CELL
-        c_l2 = ws_sld.cell(r_w, 1, f"Tier {tier_n} Heat (W)")
-        c_l2.font = FONT_HINT; c_l2.fill = FILL_WHITE; c_l2.alignment = ALIGN_C; c_l2.border = BORDER_CELL
+        ws_sld.merge_cells(start_row=r_h, start_column=1, end_row=r_w, end_column=1)
+        ctz = ws_sld.cell(r_h, 1, f"TIER {tier_n}\nBranch")
+        ctz.font = FONT_CALC_BOLD; ctz.fill = FILL_ZEBRA; ctz.alignment = ALIGN_C
+        for rr in (r_h, r_m, r_w): ws_sld.cell(rr, 1).border = BORDER_CELL
 
         for ci in range(8):
-            col_num = 2 + ci
+            col_sp = 2 + ci * 2
+            col_cd = col_sp + 1
             key_str = f"\"COL-0{ci+1}|{tier_n}\""
             role_lk = f"INDEX({role_rng},MATCH({key_str},{key_rng},0))"
             tag_lk  = f"INDEX({tag_rng},MATCH({key_str},{key_rng},0))"
             iop_lk  = f"INDEX({iop_rng},MATCH({key_str},{key_rng},0))"
             stat_lk = f"INDEX({stat_rng},MATCH({key_str},{key_rng},0))"
+            lmod_lk = f"INDEX({lmod_rng},MATCH({key_str},{key_rng},0))"
+            tpl_lk  = f"INDEX({tpl_rng},MATCH({key_str},{key_rng},0))"
+            has_item = f"ISNUMBER(MATCH({key_str},{key_rng},0))"
 
-            sym_formula = (
+            # Spine Column (VBB vertical busbar line + branch tap tee!)
+            ws_sld.cell(r_h, col_sp, f"=IF({has_item},\"│\",\"\")").font = FONT_SPINE
+            ws_sld.cell(r_h, col_sp).alignment = ALIGN_C
+            ws_sld.cell(r_m, col_sp, f"=IF({has_item},\"├─●\",\"\")").font = FONT_SPINE
+            ws_sld.cell(r_m, col_sp).alignment = ALIGN_C
+            ws_sld.cell(r_w, col_sp, f"=IF({has_item},\"│\",\"\")").font = FONT_SPINE
+            ws_sld.cell(r_w, col_sp).alignment = ALIGN_C
+
+            # Card Top Header: Tag + [1P] / [IC] / [FUT]
+            c_th = ws_sld.cell(
+                r_h, col_cd,
+                f"=IFERROR({tag_lk}&IF(ISNUMBER(SEARCH(\"1P\",{lmod_lk})),\" [1P]\",\"\")&IF({role_lk}=\"Interconnector\",\" [IC→B]\",IF({stat_lk}=\"Future\",\" [FUT]\",\"\")),\"\")"
+            )
+            c_th.font = FONT_CARD_H; c_th.fill = FILL_CARD_H; c_th.alignment = ALIGN_C; c_th.border = BORDER_CARD_T
+
+            # Card Middle: Graphical Device Symbol + Operating Amps
+            c_tm = ws_sld.cell(
+                r_m, col_cd,
                 f"=IFERROR("
-                f"IF({role_lk}=\"Incomer\",\"▲ [ACB] \"&{tag_lk}&CHAR(10)&\"(Incomer Top · \"&TEXT({iop_lk},\"0\")&\" A)\","
-                f"IF({role_lk}=\"Interconnector\",\"├─ [⇄ IC] \"&{tag_lk}&\" → B-SIDE\"&CHAR(10)&TEXT({iop_lk},\"#,##0\")&\" A (\"&{stat_lk}&\")\","
-                f"IF({role_lk}=\"Bus Coupler\",\"══ [ X ] \"&{tag_lk}&CHAR(10)&\"Bus Coupler\","
-                f"IF({role_lk}=\"Spare / Placeholder\",\"├─ [░] \"&{tag_lk}&CHAR(10)&\"Spare / Reserve\","
-                f"\"├─ [⚡] \"&{tag_lk}&CHAR(10)&TEXT({iop_lk},\"#,##0\")&\" A · \"&{stat_lk}))))"
+                f"IF({role_lk}=\"Incomer\",\"[✕] ACB · \"&TEXT({iop_lk},\"#,##0\")&\" A\","
+                f"IF({role_lk}=\"Interconnector\",\"[⇄] IC · \"&TEXT({iop_lk},\"#,##0\")&\" A\","
+                f"IF({role_lk}=\"Spare / Placeholder\",\"[░] Spare Bay\","
+                f"IF(ISNUMBER(SEARCH(\"VSD\",{tpl_lk})),\"[~] VSD · \",IF(ISNUMBER(SEARCH(\"HRC\",{tpl_lk})),\"[═] HRC · \",IF(ISNUMBER(SEARCH(\"DOL\",{tpl_lk})),\"[M] DOL · \",\"[⚡] \")))&TEXT({iop_lk},\"#,##0.0\")&\" A\")))"
                 f",\"\")"
             )
-            cs = ws_sld.cell(r_sym, col_num, sym_formula)
-            cs.font = FONT_CALC_BOLD; cs.fill = FILL_ZEBRA; cs.alignment = ALIGN_C; cs.border = BORDER_CELL
+            c_tm.font = FONT_CALC_BOLD; c_tm.fill = FILL_WHITE; c_tm.alignment = ALIGN_C; c_tm.border = BORDER_CARD_M
 
-            cw = ws_sld.cell(r_w, col_num, f"=IFERROR(INDEX({w_rng},MATCH({key_str},{key_rng},0)),0)")
-            cw.font = FONT_CALC_BOLD; cw.alignment = ALIGN_C; cw.border = BORDER_CELL; cw.number_format = "#,##0.0\" W\";;\"-\""
+            # Card Bottom: Heat-Mapped Watts
+            c_tw = ws_sld.cell(r_w, col_cd, f"=IFERROR(INDEX({w_rng},MATCH({key_str},{key_rng},0)),0)")
+            c_tw.font = FONT_CALC_BOLD; c_tw.alignment = ALIGN_C; c_tw.border = BORDER_CARD_B; c_tw.number_format = "#,##0.0\" W\";;\"\""
 
-    # SLD Footer: Live Column Total Heat (Row 29) + Heat Map Legend (Row 31)
-    ws_sld.row_dimensions[29].height = 24
-    ws_sld.cell(29, 1, "COLUMN TOTAL HEAT (W)").font = FONT_TOTAL
-    ws_sld.cell(29, 1).fill = FILL_TOTAL; ws_sld.cell(29, 1).alignment = ALIGN_C; ws_sld.cell(29, 1).border = BORDER_TOTAL
+    # Row 30: Column Total Heat Summary Strip
+    ws_sld.row_dimensions[30].height = 24
+    ws_sld.cell(30, 1, "COL TOTAL (W)").font = FONT_TOTAL; ws_sld.cell(30, 1).fill = FILL_TOTAL; ws_sld.cell(30, 1).alignment = ALIGN_C; ws_sld.cell(30, 1).border = BORDER_TOTAL
     for ci in range(8):
-        col_num = 2 + ci; cr = COL_START + ci
-        ct = ws_sld.cell(29, col_num, f"='03_Feeder_Schedule'!L{cr}")
+        col_sp = 2 + ci * 2; col_cd = col_sp + 1; cr = COL_START + ci
+        ws_sld.merge_cells(start_row=30, start_column=col_sp, end_row=30, end_column=col_cd)
+        ct = ws_sld.cell(30, col_sp, f"='03_Feeder_Schedule'!L{cr}")
         ct.font = FONT_TOTAL; ct.alignment = ALIGN_C; ct.border = BORDER_TOTAL; ct.number_format = "#,##0.0\" W\";;\"-\""
+        ws_sld.cell(30, col_cd).border = BORDER_TOTAL
 
-    # Heat Map Colour Legend on Row 31
+    # Row 31: Heat Map Colour Legend
     ws_sld.row_dimensions[31].height = 20
-    ws_sld.cell(31, 1, "HEAT MAP LEGEND:").font = FONT_CALC_BOLD; ws_sld.cell(31, 1).alignment = ALIGN_C
+    ws_sld.cell(31, 1, "HEAT MAP:").font = FONT_CALC_BOLD; ws_sld.cell(31, 1).alignment = ALIGN_C
     for idx_lg, (lg_txt, lg_bg) in enumerate([
-        ("0 W (Idle / Spare)", "E0F2FE"),
+        ("0 W (Idle / Empty)", "E0F2FE"),
         ("Low (< 50 W)", "DCFCE7"),
         ("Moderate (50–180 W)", "FEF08A"),
         ("High (180–500 W)", "FDBA74"),
         ("Hotspot (> 500 W)", "FCA5A5"),
     ]):
-        clg = ws_sld.cell(31, 2 + idx_lg, lg_txt)
+        c1 = 2 + idx_lg * 2
+        ws_sld.merge_cells(start_row=31, start_column=c1, end_row=31, end_column=c1 + 1)
+        clg = ws_sld.cell(31, c1, lg_txt)
         clg.font = FONT_CALC_BOLD; clg.fill = PatternFill("solid", fgColor=lg_bg); clg.alignment = ALIGN_C; clg.border = BORDER_CELL
 
-    # Live Heat Map Conditional Formatting across SLD (Incomers, HBB, VBB, All 8 Tiers, Column Totals!)
+    # Conditional Formatting Heat Map across SLD
     heat_comp_rule = ColorScaleRule(start_type="num", start_value=0, start_color="E0F2FE", mid_type="num", mid_value=150, mid_color="FEF08A", end_type="num", end_value=700, end_color="FCA5A5")
     heat_hbb_rule  = ColorScaleRule(start_type="num", start_value=0, start_color="E0F2FE", mid_type="num", mid_value=100, mid_color="FEF08A", end_type="num", end_value=300, end_color="FCA5A5")
     heat_col_rule  = ColorScaleRule(start_type="num", start_value=0, start_color="E0F2FE", mid_type="num", mid_value=400, mid_color="FEF08A", end_type="num", end_value=1800, end_color="FCA5A5")
-    ws_sld.conditional_formatting.add("B7:I7", heat_comp_rule)
-    ws_sld.conditional_formatting.add("B10:H10", heat_hbb_rule)
-    ws_sld.conditional_formatting.add("B11:H11", heat_comp_rule)
-    ws_sld.conditional_formatting.add("B12:I12", heat_comp_rule)
-    for tier_n in range(1, 9):
-        ws_sld.conditional_formatting.add(f"B{14 + (tier_n - 1) * 2}:I{14 + (tier_n - 1) * 2}", heat_comp_rule)
-    ws_sld.conditional_formatting.add("B29:I29", heat_col_rule)
+    ws_sld.conditional_formatting.add("B7:Q7", heat_comp_rule)
+    ws_sld.conditional_formatting.add("B10:Q10", heat_hbb_rule)
+    ws_sld.conditional_formatting.add("C11:Q11", heat_comp_rule)
+    for tier_n in range(1, 7):
+        r_w = 14 + (tier_n - 1) * 3
+        ws_sld.conditional_formatting.add(f"C{r_w}:Q{r_w}", heat_comp_rule)
+    ws_sld.conditional_formatting.add("B30:Q30", heat_col_rule)
 
-    ws_sld.column_dimensions["A"].width = 22
-    for ci in range(8): ws_sld.column_dimensions[get_column_letter(2 + ci)].width = 22
-    ws_sld.column_dimensions["J"].width = 4
+    # Embedded Native Excel Stacked Bar Chart (Live Column Heat Profile!) below SLD
+    sld_chart = BarChart()
+    sld_chart.type = "col"
+    sld_chart.grouping = "stacked"
+    sld_chart.overlap = 100
+    sld_chart.title = "Live Column Thermal Heat Profile (Devices W vs Vertical Busbar W)"
+    sld_chart.y_axis.title = "Heat Dissipation (W)"
+    sld_chart.x_axis.title = "Switchboard Column"
+    sld_chart.width = 24
+    sld_chart.height = 9.5
+    sld_data_ref = Reference(ws_fed, min_col=10, max_col=11, min_row=5, max_row=13)
+    sld_cats_ref = Reference(ws_fed, min_col=2, min_row=6, max_row=13)
+    sld_chart.add_data(sld_data_ref, titles_from_data=True)
+    sld_chart.set_categories(sld_cats_ref)
+    ws_sld.add_chart(sld_chart, "B33")
+
+    ws_sld.column_dimensions["A"].width = 16
+    for ci in range(8):
+        ws_sld.column_dimensions[get_column_letter(2 + ci * 2)].width = 4.2
+        ws_sld.column_dimensions[get_column_letter(3 + ci * 2)].width = 18.5
     ws_sld.freeze_panes = "B9"
     configure_print(ws_sld, landscape=True, fit_width=1, fit_height=1)
 
     # =========================================================================
-    # SHEET 05b: 05b_Live_GA_HeatMap (LIVE GENERAL ARRANGEMENT FRONT ELEVATION + HEAT MAP!)
+    # SHEET 05b: 05b_Live_GA_HeatMap (GRAPHICAL CAD FRONT ELEVATION + RULER + CHART!)
     # =========================================================================
+    ws_ga.views.sheetView[0].showGridLines = False
+    for rr in range(4, 32):
+        for cc in range(1, 18):
+            ws_ga.cell(rr, cc).fill = FILL_CANVAS
+
     style_title_banner(
-        ws_ga, 10,
-        "LIVE GENERAL ARRANGEMENT (GA) — FRONT ELEVATION CABINET VIEW & HEAT MAP",
-        "Auto-generated physical front elevation from '03_Feeder_Schedule' & '04_Busbar_Segments'. Compartments, HBB & columns are colour-coded by live heat output (W)."
+        ws_ga, 17,
+        "LIVE GENERAL ARRANGEMENT (GA) — GRAPHICAL FRONT ELEVATION & THERMAL HEAT MAP",
+        "CAD-style switchboard front elevation with Elevation Scale (EL), copper HBB/VBB busbars, cubicle doors, base plinth, width dimensions & live heat chart."
     )
-    ws_ga.row_dimensions[4].height = 22
-    ws_ga.merge_cells("A4:I4")
+    ws_ga.row_dimensions[4].height = 24
+    ws_ga.merge_cells("A4:Q4")
     c_ga_bar = ws_ga.cell(
         4, 1,
-        "=\"OVERALL DIMENSIONS: \"&TEXT(SUM('03_Feeder_Schedule'!C6:C13),\"#,##0\")&\" W × \"&'02_Board_&_Busbars'!B18&\" H × \"&'02_Board_&_Busbars'!B19&\" D mm   |   HBB POSITION: \"&UPPER('02_Board_&_Busbars'!B21)&\" (\"&'02_Board_&_Busbars'!B20&\" mm)   |   SCENARIO: \"&'01_Summary'!C9"
+        "=\"OVERALL DIMENSIONS: \"&TEXT(SUM('03_Feeder_Schedule'!C6:C13),\"#,##0\")&\" W × \"&'02_Board_&_Busbars'!B18&\" H × \"&'02_Board_&_Busbars'!B19&\" D mm   |   HBB: \"&UPPER('02_Board_&_Busbars'!B21)&\" (\"&'02_Board_&_Busbars'!B20&\" mm)   |   SCENARIO: \"&'01_Summary'!C9"
     )
     c_ga_bar.font = FONT_SECTION; c_ga_bar.fill = FILL_SECTION; c_ga_bar.alignment = ALIGN_C
-    for cc in range(1, 10): ws_ga.cell(4, cc).border = BORDER_CELL
+    for cc in range(1, 18): ws_ga.cell(4, cc).border = BORDER_CELL
 
-    ws_ga.cell(5, 1, "ELEVATION ZONE").font = FONT_HEADER; ws_ga.cell(5, 1).fill = FILL_HEADER; ws_ga.cell(5, 1).alignment = ALIGN_C; ws_ga.cell(5, 1).border = BORDER_CELL
-    ws_ga.row_dimensions[5].height = 24; ws_ga.row_dimensions[6].height = 20; ws_ga.row_dimensions[7].height = 26
-    ws_ga.cell(6, 1, "Cubicle Width (mm)").font = FONT_CALC_BOLD; ws_ga.cell(6, 1).fill = FILL_ZEBRA; ws_ga.cell(6, 1).border = BORDER_CELL
-    ws_ga.cell(7, 1, "Top HBB Chamber (W/m)").font = FONT_CALC_BOLD; ws_ga.cell(7, 1).fill = FILL_HERO; ws_ga.cell(7, 1).border = BORDER_CELL
+    ws_ga.row_dimensions[5].height = 22
+    ws_ga.row_dimensions[6].height = 24
+    ws_ga.row_dimensions[7].height = 19
+    ws_ga.cell(5, 1, "ELEVATION\n(FFL mm)").font = FONT_HEADER; ws_ga.cell(5, 1).fill = FILL_HEADER; ws_ga.cell(5, 1).alignment = ALIGN_C; ws_ga.cell(5, 1).border = BORDER_CELL
+    ws_ga.cell(6, 1, "EL +2200\nTop HBB").font = FONT_CALC_BOLD; ws_ga.cell(6, 1).fill = FILL_BUS_CU; ws_ga.cell(6, 1).alignment = ALIGN_C; ws_ga.cell(6, 1).border = BORDER_CELL
+    ws_ga.cell(7, 1, "HBB W/m").font = FONT_HINT; ws_ga.cell(7, 1).fill = FILL_WHITE; ws_ga.cell(7, 1).alignment = ALIGN_C; ws_ga.cell(7, 1).border = BORDER_CELL
 
-    border_cab = Border(
-        top=Side(style="medium", color=NAVY_DARK),
-        bottom=Side(style="medium", color=NAVY_DARK),
-        left=Side(style="medium", color=NAVY_DARK),
-        right=Side(style="medium", color=NAVY_DARK),
-    )
+    border_cab = Border(top=Side(style="medium", color=NAVY_DARK), bottom=Side(style="medium", color=NAVY_DARK), left=Side(style="medium", color=NAVY_DARK), right=Side(style="medium", color=NAVY_DARK))
 
     for ci in range(8):
-        col_num = 2 + ci; cr = COL_START + ci
-        c_hdr = ws_ga.cell(5, col_num, f"=IF('03_Feeder_Schedule'!B{cr}<>\"\",'03_Feeder_Schedule'!B{cr},'03_Feeder_Schedule'!A{cr}&\" (Unused)\")")
+        col_sp = 2 + ci * 2; col_cd = col_sp + 1; cr = COL_START + ci
+        ws_ga.merge_cells(start_row=5, start_column=col_sp, end_row=5, end_column=col_cd)
+        c_hdr = ws_ga.cell(5, col_sp, f"=IF('03_Feeder_Schedule'!B{cr}<>\"\",'03_Feeder_Schedule'!B{cr},'03_Feeder_Schedule'!A{cr}&\" (Unused)\")")
         c_hdr.font = FONT_HEADER; c_hdr.fill = FILL_SECTION; c_hdr.alignment = ALIGN_C; c_hdr.border = border_cab
-        c_w = ws_ga.cell(6, col_num, f"='03_Feeder_Schedule'!C{cr}"); c_w.font = FONT_CALC_BOLD; c_w.fill = FILL_ZEBRA; c_w.alignment = ALIGN_C; c_w.border = BORDER_CELL; c_w.number_format = "#,##0\" mm\""
-        c_hb = ws_ga.cell(7, col_num, f"='04_Busbar_Segments'!H{HBB_START + ci}" if ci < 7 else 0)
-        c_hb.number_format = "0.0\" W/m\"" if ci < 7 else "\"End\""; c_hb.font = FONT_CALC_BOLD; c_hb.alignment = ALIGN_C; c_hb.border = border_bus
+        ws_ga.cell(5, col_cd).border = border_cab
 
-    for tier_n in range(1, 9):
-        r_lbl = 8 + (tier_n - 1) * 2; r_val = r_lbl + 1
-        ws_ga.row_dimensions[r_lbl].height = 38; ws_ga.row_dimensions[r_val].height = 19
-        ws_ga.cell(r_lbl, 1, f"Tier {tier_n}\n(Compartment\nDoor & EL)").font = FONT_CALC_BOLD; ws_ga.cell(r_lbl, 1).fill = FILL_ZEBRA; ws_ga.cell(r_lbl, 1).alignment = ALIGN_C; ws_ga.cell(r_lbl, 1).border = BORDER_CELL
-        ws_ga.cell(r_val, 1, f"Tier {tier_n} Heat (W)").font = FONT_HINT; ws_ga.cell(r_val, 1).fill = FILL_WHITE; ws_ga.cell(r_val, 1).alignment = ALIGN_C; ws_ga.cell(r_val, 1).border = BORDER_CELL
+        # Row 6: Continuous Top HBB Copper Chamber
+        ws_ga.merge_cells(start_row=6, start_column=col_sp, end_row=6, end_column=col_cd)
+        c_h6 = ws_ga.cell(6, col_sp, f"=IF('04_Busbar_Segments'!C{HBB_START+ci}>0,\"══ \"&'04_Busbar_Segments'!E{HBB_START+ci}&\" \"&TEXT('04_Busbar_Segments'!D{HBB_START+ci},\"#,##0\")&\"A ══\",IF('03_Feeder_Schedule'!C{cr}>0,\"══ HBB CHAMBER ══\",\"\"))" if ci < 7 else f"=IF('03_Feeder_Schedule'!C{cr}>0,\"══ HBB CHAMBER ══\",\"\")")
+        c_h6.font = FONT_BUS; c_h6.fill = FILL_BUS_CU; c_h6.alignment = ALIGN_C; c_h6.border = BORDER_BUS_TOP
+        ws_ga.cell(6, col_cd).border = BORDER_BUS_TOP
+
+        # Row 7: HBB W/m
+        ws_ga.merge_cells(start_row=7, start_column=col_sp, end_row=7, end_column=col_cd)
+        c_hb = ws_ga.cell(7, col_sp, f"='04_Busbar_Segments'!H{HBB_START + ci}" if ci < 7 else 0)
+        c_hb.number_format = "0.0\" W/m\"" if ci < 7 else "\"End\""; c_hb.font = FONT_CALC_BOLD; c_hb.alignment = ALIGN_C; c_hb.border = BORDER_CELL
+
+    # Rows 8..25: 6 Graphical Cubicle Compartment Doors (3 rows per tier: Door Top Tag, Door Body + Handle + EL, Heat-Mapped W!)
+    el_marks = ["EL +1800", "EL +1500", "EL +1200", "EL +900", "EL +600", "EL +300"]
+    for tier_n in range(1, 7):
+        r_h = 8 + (tier_n - 1) * 3
+        r_m = r_h + 1
+        r_w = r_h + 2
+        ws_ga.row_dimensions[r_h].height = 17
+        ws_ga.row_dimensions[r_m].height = 28
+        ws_ga.row_dimensions[r_w].height = 18
+
+        ws_ga.merge_cells(start_row=r_h, start_column=1, end_row=r_w, end_column=1)
+        c_el = ws_ga.cell(r_h, 1, f"{el_marks[tier_n-1]}\nTier {tier_n}")
+        c_el.font = FONT_CALC_BOLD; c_el.fill = FILL_ZEBRA; c_el.alignment = ALIGN_C
+        for rr in (r_h, r_m, r_w): ws_ga.cell(rr, 1).border = BORDER_CELL
+
         for ci in range(8):
-            col_num = 2 + ci; key_str = f"\"COL-0{ci+1}|{tier_n}\""
-            c_box = ws_ga.cell(
-                r_lbl, col_num,
-                f"=IFERROR(INDEX({tag_rng},MATCH({key_str},{key_rng},0))&\"  [\"&LEFT(INDEX({role_rng},MATCH({key_str},{key_rng},0)),6)&\"]\"&CHAR(10)&"
-                f"TEXT(INDEX({ht_rng},MATCH({key_str},{key_rng},0)),\"0\")&\"mm · EL+\"&TEXT(INDEX({el_rng},MATCH({key_str},{key_rng},0)),\"0\")&CHAR(10)&"
-                f"TEXT(INDEX({iop_rng},MATCH({key_str},{key_rng},0)),\"#,##0\")&\" A  (\" & INDEX({stat_rng},MATCH({key_str},{key_rng},0)) & \")\",\"—\")"
-            )
-            c_box.font = FONT_CALC_BOLD; c_box.fill = FILL_ZEBRA; c_box.alignment = ALIGN_C; c_box.border = border_cab
-            c_w = ws_ga.cell(r_val, col_num, f"=IFERROR(INDEX({w_rng},MATCH({key_str},{key_rng},0)),0)")
-            c_w.font = FONT_CALC_BOLD; c_w.alignment = ALIGN_C; c_w.border = BORDER_CELL; c_w.number_format = "#,##0.0\" W\";;\"-\""
+            col_sp = 2 + ci * 2; col_cd = col_sp + 1
+            key_str = f"\"COL-0{ci+1}|{tier_n}\""
+            cr = COL_START + ci
+            has_vbb = f"'03_Feeder_Schedule'!K{cr}>0"
+            tag_lk  = f"INDEX({tag_rng},MATCH({key_str},{key_rng},0))"
+            role_lk = f"INDEX({role_rng},MATCH({key_str},{key_rng},0))"
+            ht_lk   = f"INDEX({ht_rng},MATCH({key_str},{key_rng},0))"
+            el_lk   = f"INDEX({el_rng},MATCH({key_str},{key_rng},0))"
+            iop_lk  = f"INDEX({iop_rng},MATCH({key_str},{key_rng},0))"
+            lmod_lk = f"INDEX({lmod_rng},MATCH({key_str},{key_rng},0))"
 
-    # Base Plinth Row (Row 24)
-    ws_ga.row_dimensions[24].height = 18
-    ws_ga.cell(24, 1, "BASE PLINTH (100 mm)").font = FONT_HEADER; ws_ga.cell(24, 1).fill = FILL_HEADER; ws_ga.cell(24, 1).alignment = ALIGN_C; ws_ga.cell(24, 1).border = BORDER_CELL
+            # Left VBB Spine inside cubicle
+            for rr, sym in [(r_h, "║"), (r_m, "╠"), (r_w, "║")]:
+                csp = ws_ga.cell(rr, col_sp, f"=IF({has_vbb},\"{sym}\",\"\")")
+                csp.font = FONT_SPINE; csp.alignment = ALIGN_C; csp.fill = FILL_SPINE
+
+            # Compartment Door Top
+            c_dt = ws_ga.cell(r_h, col_cd, f"=IFERROR({tag_lk}&IF(ISNUMBER(SEARCH(\"1P\",{lmod_lk})),\" [1P]\",\"\")&\"  ┃\",\"\")")
+            c_dt.font = FONT_CARD_H; c_dt.fill = FILL_CARD_H; c_dt.alignment = ALIGN_C; c_dt.border = BORDER_CARD_T
+
+            # Compartment Door Body (Height, EL, Amps)
+            c_dm = ws_ga.cell(
+                r_m, col_cd,
+                f"=IFERROR(TEXT({iop_lk},\"#,##0.0\")&\" A  ·  \"&TEXT({ht_lk},\"0\")&\"mm\"&CHAR(10)&\"EL+\"&TEXT({el_lk},\"0\")&\" mm  [\"&LEFT({role_lk},6)&\"]\",\"\")"
+            )
+            c_dm.font = FONT_CALC_BOLD; c_dm.fill = FILL_WHITE; c_dm.alignment = ALIGN_C; c_dm.border = BORDER_CARD_M
+
+            # Compartment Door Thermal Bar (Heat-Mapped W!)
+            c_dw = ws_ga.cell(r_w, col_cd, f"=IFERROR(INDEX({w_rng},MATCH({key_str},{key_rng},0)),0)")
+            c_dw.font = FONT_CALC_BOLD; c_dw.alignment = ALIGN_C; c_dw.border = BORDER_CARD_B; c_dw.number_format = "#,##0.0\" W\";;\"\""
+
+    # Row 26: Dark Steel Base Plinth (FFL +0 mm)
+    ws_ga.row_dimensions[26].height = 20
+    ws_ga.cell(26, 1, "FFL +0 mm\nPLINTH").font = FONT_HEADER; ws_ga.cell(26, 1).fill = FILL_HEADER; ws_ga.cell(26, 1).alignment = ALIGN_C; ws_ga.cell(26, 1).border = BORDER_CELL
     for ci in range(8):
-        cp = ws_ga.cell(24, 2 + ci, f"=IF('03_Feeder_Schedule'!C{COL_START+ci}>0,\"FFL +0 mm  |  \"&'03_Feeder_Schedule'!C{COL_START+ci}&\" mm\",\"\")")
+        col_sp = 2 + ci * 2; col_cd = col_sp + 1; cr = COL_START + ci
+        ws_ga.merge_cells(start_row=26, start_column=col_sp, end_row=26, end_column=col_cd)
+        cp = ws_ga.cell(26, col_sp, f"=IF('03_Feeder_Schedule'!C{cr}>0,\"◄─── \"&'03_Feeder_Schedule'!C{cr}&\" mm ───►\",\"\")")
         cp.font = Font(name=FONT_FAMILY, size=8.5, bold=True, color="FFFFFF"); cp.fill = PatternFill("solid", fgColor="334155"); cp.alignment = ALIGN_C; cp.border = BORDER_CELL
 
-    for offset, (lbl_txt, src_col, nf) in enumerate([
-        ("Col Net Load / Supply (A)", "G", "#,##0.0\" A\""),
-        ("Col Vertical Busbar (W)", "K", "#,##0.0\" W\""),
-        ("COLUMN TOTAL HEAT (W)", "L", "#,##0.0\" W\""),
-    ]):
-        rr = 25 + offset; ws_ga.row_dimensions[rr].height = 22
-        ws_ga.cell(rr, 1, lbl_txt).font = FONT_TOTAL if offset == 2 else FONT_CALC_BOLD
-        ws_ga.cell(rr, 1).fill = FILL_TOTAL if offset == 2 else FILL_ZEBRA; ws_ga.cell(rr, 1).border = BORDER_TOTAL if offset == 2 else BORDER_CELL
-        for ci in range(8):
-            cr = COL_START + ci; col_num = 2 + ci
-            formula = f"=MAX('03_Feeder_Schedule'!G{cr}+'03_Feeder_Schedule'!H{cr},'03_Feeder_Schedule'!I{cr})" if offset == 0 else f"='03_Feeder_Schedule'!{src_col}{cr}"
-            c = ws_ga.cell(rr, col_num, formula); c.font = FONT_TOTAL if offset == 2 else FONT_CALC; c.fill = FILL_HERO if offset == 2 else FILL_WHITE; c.alignment = ALIGN_C; c.border = BORDER_TOTAL if offset == 2 else BORDER_CELL; c.number_format = nf
+    # Row 27: Column Total Heat Summary
+    ws_ga.row_dimensions[27].height = 22
+    ws_ga.cell(27, 1, "COL TOTAL (W)").font = FONT_TOTAL; ws_ga.cell(27, 1).fill = FILL_TOTAL; ws_ga.cell(27, 1).alignment = ALIGN_C; ws_ga.cell(27, 1).border = BORDER_TOTAL
+    for ci in range(8):
+        col_sp = 2 + ci * 2; col_cd = col_sp + 1; cr = COL_START + ci
+        ws_ga.merge_cells(start_row=27, start_column=col_sp, end_row=27, end_column=col_cd)
+        ct = ws_ga.cell(27, col_sp, f"='03_Feeder_Schedule'!L{cr}")
+        ct.font = FONT_TOTAL; ct.alignment = ALIGN_C; ct.border = BORDER_TOTAL; ct.number_format = "#,##0.0\" W\";;\"-\""
+        ws_ga.cell(27, col_cd).border = BORDER_TOTAL
 
-    # Heat Map Colour Legend on Row 29
+    # Row 29: Heat Map Colour Legend
     ws_ga.row_dimensions[29].height = 20
-    ws_ga.cell(29, 1, "HEAT MAP LEGEND:").font = FONT_CALC_BOLD; ws_ga.cell(29, 1).alignment = ALIGN_C
+    ws_ga.cell(29, 1, "HEAT MAP:").font = FONT_CALC_BOLD; ws_ga.cell(29, 1).alignment = ALIGN_C
     for idx_lg, (lg_txt, lg_bg) in enumerate([
-        ("0 W (Idle / Spare)", "E0F2FE"),
+        ("0 W (Idle / Empty)", "E0F2FE"),
         ("Low (< 50 W)", "DCFCE7"),
         ("Moderate (50–180 W)", "FEF08A"),
         ("High (180–500 W)", "FDBA74"),
         ("Hotspot (> 500 W)", "FCA5A5"),
     ]):
-        clg = ws_ga.cell(29, 2 + idx_lg, lg_txt)
+        c1 = 2 + idx_lg * 2
+        ws_ga.merge_cells(start_row=29, start_column=c1, end_row=29, end_column=c1 + 1)
+        clg = ws_ga.cell(29, c1, lg_txt)
         clg.font = FONT_CALC_BOLD; clg.fill = PatternFill("solid", fgColor=lg_bg); clg.alignment = ALIGN_C; clg.border = BORDER_CELL
 
-    ws_ga.conditional_formatting.add("B7:H7", heat_hbb_rule)
-    for tier_n in range(1, 9):
-        ws_ga.conditional_formatting.add(f"B{9 + (tier_n - 1) * 2}:I{9 + (tier_n - 1) * 2}", heat_comp_rule)
-    ws_ga.conditional_formatting.add("B26:I26", heat_comp_rule)
-    ws_ga.conditional_formatting.add("B27:I27", heat_col_rule)
+    ws_ga.conditional_formatting.add("B7:Q7", heat_hbb_rule)
+    for tier_n in range(1, 7):
+        r_w = 10 + (tier_n - 1) * 3
+        ws_ga.conditional_formatting.add(f"C{r_w}:Q{r_w}", heat_comp_rule)
+    ws_ga.conditional_formatting.add("B27:Q27", heat_col_rule)
 
-    ws_ga.column_dimensions["A"].width = 22
-    for ci in range(8): ws_ga.column_dimensions[get_column_letter(2 + ci)].width = 22
-    ws_ga.column_dimensions["J"].width = 4
+    # Embedded Native Excel Stacked Bar Chart below GA Elevation!
+    ga_chart = BarChart()
+    ga_chart.type = "col"
+    ga_chart.grouping = "stacked"
+    ga_chart.overlap = 100
+    ga_chart.title = "Switchboard Elevation Thermal Profile (Cubicle Heat W)"
+    ga_chart.y_axis.title = "Heat Dissipation (W)"
+    ga_chart.x_axis.title = "Cubicle"
+    ga_chart.width = 24
+    ga_chart.height = 9.5
+    ga_data_ref = Reference(ws_fed, min_col=10, max_col=11, min_row=5, max_row=13)
+    ga_cats_ref = Reference(ws_fed, min_col=2, min_row=6, max_row=13)
+    ga_chart.add_data(ga_data_ref, titles_from_data=True)
+    ga_chart.set_categories(ga_cats_ref)
+    ws_ga.add_chart(ga_chart, "B31")
+
+    ws_ga.column_dimensions["A"].width = 16
+    for ci in range(8):
+        ws_ga.column_dimensions[get_column_letter(2 + ci * 2)].width = 3.2
+        ws_ga.column_dimensions[get_column_letter(3 + ci * 2)].width = 19.5
     ws_ga.freeze_panes = "B8"
     configure_print(ws_ga, landscape=True, fit_width=1, fit_height=1)
 
@@ -1902,7 +2091,7 @@ def generate_workbook():
     try:
         wb.save(final_path)
     except PermissionError:
-        final_path = OUTPUT_PATH.replace(".xlsx", "_v3.1.xlsx")
+        final_path = OUTPUT_PATH.replace(".xlsx", "_v3.2.xlsx")
         wb.save(final_path)
         print(f"NOTE: Original file is open in Excel; saved updated workbook to: {final_path}")
 

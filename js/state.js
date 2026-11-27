@@ -599,8 +599,22 @@ window.SGState = (function () {
     return p;
   }
 
+  function createDefaultSimpleTierGrid() {
+    return [
+      { name: 'COL-01 Incomer',      tiers: ['acb-2500', '', '', '', '', ''] },
+      { name: 'COL-02 Starters',     tiers: ['dol-55kw', 'dol-37kw', 'dol-22kw', 'dol-15kw', '', ''] },
+      { name: 'COL-03 Drives',       tiers: ['sd-75kw', 'vsd-45kw', 'ss-30kw', '', '', ''] },
+      { name: 'COL-04 Feeders/HRC',  tiers: ['fuse-400', 'mccb-250', 'mccb-160', 'fuse-250', '', ''] },
+      { name: 'COL-05 Interconn',    tiers: ['interconn-1250', '', '', '', '', ''] },
+    ];
+  }
+
   function createDefaultSimpleMode() {
     return {
+      inputStyle: 'tier_grid', // 'tier_grid' | 'counts'
+      tierRows: 6,
+      previewDiagram: 'sld', // 'sld' | 'ga'
+      tierGrid: createDefaultSimpleTierGrid(),
       busbarPresetId: 'bb-1250',
       material: 'cu_100',
       busbarTempC: 70,
@@ -639,9 +653,92 @@ window.SGState = (function () {
   function ensureExtras(project) {
     if (!project.uiMode) project.uiMode = 'detailed'; // 'simple' | 'detailed'
     project.simpleMode = Object.assign(createDefaultSimpleMode(), project.simpleMode || {});
+    if (!Array.isArray(project.simpleMode.tierGrid) || project.simpleMode.tierGrid.length === 0) {
+      project.simpleMode.tierGrid = createDefaultSimpleTierGrid();
+    }
     project.room = Object.assign(createDefaultRoomConfig(), project.room || {});
     ensureReportConfig(project);
     return project;
+  }
+
+  /**
+   * Build Detailed Mode columns directly from Simple Mode's Tier-by-Tier Grid
+   * using Simple Mode's rules of thumb (avgLoadPct, RDF, N-1 transfer, S factor).
+   */
+  function buildColumnsFromSimpleTierGrid(project) {
+    const sm = project.simpleMode;
+    const lib = project.deviceLibrary || window.SGCatalog.DEFAULT_DEVICE_TEMPLATES;
+    const loadFactor = Math.min(1, Math.max(0.1, Number(sm.avgLoadPct || 75) / 100));
+    const grid = Array.isArray(sm.tierGrid) && sm.tierGrid.length > 0 ? sm.tierGrid : createDefaultSimpleTierGrid();
+    const nRows = Math.max(1, Math.min(8, Number(sm.tierRows) || 6));
+
+    let fCount = 1;
+    let incCount = 1;
+    return grid.map((gCol, cIdx) => {
+      const tiers = [];
+      let hasIc = false;
+      let hasFeeder = false;
+      for (let tIdx = 0; tIdx < nRows; tIdx++) {
+        const tplId = (gCol.tiers && gCol.tiers[tIdx]) || '';
+        if (!tplId) continue;
+        const tpl = lib.find((t) => t.id === tplId);
+        if (!tpl) continue;
+        const isInc = tpl.role === 'incomer';
+        const isIc = tpl.role === 'interconnector';
+        const isCpl = tpl.role === 'bus_coupler';
+        const isSp = tpl.role === 'spacer';
+        if (isIc) hasIc = true;
+        if (tpl.role === 'feeder') hasFeeder = true;
+        const tag = isInc
+          ? `INC-${String.fromCharCode(64 + incCount++)}`
+          : isIc
+          ? 'IC-AB'
+          : isCpl
+          ? 'BC-1'
+          : isSp
+          ? `SP-${cIdx + 1}0${tIdx + 1}`
+          : tpl.category === 'VSD / Inverter'
+          ? `VSD-${(cIdx + 1) * 100 + tIdx + 1}`
+          : tpl.defaultKw
+          ? `M-${(cIdx + 1) * 100 + tIdx + 1}`
+          : `F-${(cIdx + 1) * 100 + (fCount++)}`;
+
+        const overrides = { tag };
+        if (isInc) {
+          overrides.incomerState = 'closed';
+        } else if (isCpl) {
+          overrides.couplerState = 'open';
+        } else if (isIc) {
+          overrides.normalTransferCurrentA = 0;
+          overrides.n1TransferCurrentA = Number(sm.n1TransferA || 850);
+        } else if (!isSp) {
+          if (tpl.defaultKw) {
+            overrides.loadInputMode = 'kw';
+            overrides.loadKw = tpl.defaultKw;
+            overrides.powerFactor = tpl.category === 'VSD / Inverter' ? 0.95 : 0.86;
+            overrides.efficiency = tpl.category === 'VSD / Inverter' ? 0.94 : 0.93;
+            overrides.loadFactor = loadFactor;
+          } else {
+            overrides.loadInputMode = 'amps';
+            overrides.operatingCurrentA = Math.round(tpl.ratedCurrentA * loadFactor);
+            overrides.loadFactor = 1.0;
+          }
+        }
+        tiers.push(makeTierFromTemplate(tpl.id, overrides, lib));
+      }
+      const vbb = hasIc
+        ? Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' })
+        : hasFeeder
+        ? JSON.parse(JSON.stringify(project.defaultVerticalBusbar))
+        : null;
+      return {
+        id: uid('col'),
+        name: gCol.name || `COL-0${cIdx + 1}`,
+        widthMm: 800,
+        verticalBusbar: vbb,
+        tiers,
+      };
+    });
   }
 
   /**
@@ -670,6 +767,13 @@ window.SGState = (function () {
 
     project.config.diversityFactorRDF = Number(sm.rdf || 0.9);
     project.config.globalFutureGrowthPct = Number(sm.futureGrowthPct || 20);
+
+    // If user arranged devices on the Tier-by-Tier Simple Grid, convert 1:1!
+    if (sm.inputStyle !== 'counts' && Array.isArray(sm.tierGrid) && sm.tierGrid.length > 0) {
+      project.columns = buildColumnsFromSimpleTierGrid(project);
+      project.uiMode = 'detailed';
+      return project;
+    }
 
     // 2. Build Columns from Simple Mode Topology & Circuit Counts
     const cols = [];

@@ -1090,6 +1090,162 @@ window.SGPhysics = (function () {
     const lib = project.deviceLibrary || window.SGCatalog.DEFAULT_DEVICE_TEMPLATES;
     const findTpl = (id) => lib.find((t) => t.id === id) || lib[0];
 
+    // --- NEW: Tier-by-Tier Simple Mode (Rules-of-Thumb Board Assessment + Live SLD/GA!) ---
+    if (sm.inputStyle !== 'counts' && Array.isArray(sm.tierGrid) && sm.tierGrid.length > 0) {
+      const nRows = Math.max(1, Math.min(8, Number(sm.tierRows) || 6));
+      let fCount = 1;
+      let incCount = 1;
+      const tempCols = sm.tierGrid.map((gCol, cIdx) => {
+        const tiers = [];
+        let hasIc = false;
+        let hasFeeder = false;
+        for (let tIdx = 0; tIdx < nRows; tIdx++) {
+          const tplId = (gCol.tiers && gCol.tiers[tIdx]) || '';
+          if (!tplId) continue;
+          const tpl = lib.find((t) => t.id === tplId);
+          if (!tpl) continue;
+          const isInc = tpl.role === 'incomer';
+          const isIc = tpl.role === 'interconnector';
+          const isCpl = tpl.role === 'bus_coupler';
+          const isSp = tpl.role === 'spacer';
+          if (isIc) hasIc = true;
+          if (tpl.role === 'feeder') hasFeeder = true;
+          const tag = isInc
+            ? `INC-${String.fromCharCode(64 + incCount++)}`
+            : isIc
+            ? 'IC-AB'
+            : isCpl
+            ? 'BC-1'
+            : isSp
+            ? `SP-${cIdx + 1}0${tIdx + 1}`
+            : tpl.category === 'VSD / Inverter'
+            ? `VSD-${(cIdx + 1) * 100 + tIdx + 1}`
+            : tpl.defaultKw
+            ? `M-${(cIdx + 1) * 100 + tIdx + 1}`
+            : `F-${(cIdx + 1) * 100 + fCount++}`;
+
+          tiers.push({
+            id: `sm-${cIdx}-${tIdx}`,
+            gridCol: cIdx,
+            gridTier: tIdx,
+            templateId: tpl.id,
+            tag,
+            description: tpl.name,
+            role: tpl.role || 'feeder',
+            category: tpl.category,
+            frameSize: tpl.frameSize || tpl.modelSeries || '',
+            status: 'active',
+            heightMm: tpl.defaultHeightMm || 250,
+            ratedCurrentA: tpl.ratedCurrentA,
+            ratedLossW: tpl.ratedLossW,
+            fixedLossW: tpl.fixedLossW || 0,
+            subComponents: tpl.subComponents ? JSON.parse(JSON.stringify(tpl.subComponents)) : null,
+            phases: tpl.phases || '3P',
+            loadInputMode: tpl.defaultKw ? 'kw' : 'amps',
+            loadKw: tpl.defaultKw || 0,
+            operatingCurrentA: Math.round(tpl.ratedCurrentA * loadPct),
+            powerFactor: tpl.category === 'VSD / Inverter' ? 0.95 : 0.86,
+            efficiency: tpl.category === 'VSD / Inverter' ? 0.94 : 0.93,
+            loadFactor: tpl.defaultKw ? loadPct : 1.0,
+            incomerState: 'closed',
+            couplerState: 'open',
+            normalTransferCurrentA: 0,
+            n1TransferCurrentA: Math.max(0, Number(sm.n1TransferA) || 0),
+            remoteBoardName: 'MSB-B (Firm Supply)',
+            cableSpec: { includeCableLoss: true, material: 'cu_100', cablesPerPhase: 3, csaMm2: 240, internalLengthM: 2.5, operatingTempC: 70 },
+          });
+        }
+        return {
+          id: `sm-col-${cIdx}`,
+          name: gCol.name || `COL-0${cIdx + 1}`,
+          widthMm: 800,
+          verticalBusbar: hasIc ? Object.assign({}, hbbSpec, { label: 'Interconnector Riser' }) : hasFeeder ? Object.assign({}, vbbSpec) : null,
+          tiers,
+        };
+      });
+
+      const tempProject = {
+        meta: project.meta || { projectName: 'Simple Mode Switchboard', projectNumber: 'SM-001' },
+        activeScenario: project.activeScenario || 'normal',
+        config: Object.assign({}, cfg, {
+          diversityFactorRDF: rdf,
+          globalFutureGrowthPct: futurePct * 100,
+        }),
+        mainBusbar: hbbSpec,
+        defaultVerticalBusbar: vbbSpec,
+        columns: tempCols,
+      };
+
+      function mapEvalToSimple(ev) {
+        const t = ev.totals;
+        let vsdLoss = 0, dolLoss = 0, fdrLoss = 0, incLoss = 0, icLoss = 0;
+        ev.columns.forEach((cr) => {
+          cr.tiers.forEach((tr) => {
+            const w = tr.deviceLoss ? tr.deviceLoss.pTotalW : 0;
+            if (tr.tier.role === 'incomer') incLoss += w;
+            else if (tr.tier.role === 'interconnector') icLoss += w;
+            else if (tr.tier.category === 'VSD / Inverter') vsdLoss += w;
+            else if (tr.tier.category && tr.tier.category.includes('Starter')) dolLoss += w;
+            else fdrLoss += w;
+          });
+        });
+        return {
+          totalBoardA: t.totalIncomerCurrentA,
+          localDivA: Math.max(0, t.totalIncomerCurrentA - (ev.isN1Transfer ? Number(sm.n1TransferA || 0) : 0)),
+          icA: ev.isN1Transfer ? Number(sm.n1TransferA || 0) : 0,
+          hbbPeakWPerM: t.maxHbbWPerM,
+          busbarW: t.totalBusbarW,
+          hbbLossW: t.totalHbbLossW,
+          vbbLossW: t.totalVbbLossW,
+          jointsW: t.totalJointsTakeoffW,
+          devicesW: t.totalDevicesW,
+          dolLoss,
+          vsdLoss,
+          fdrLoss,
+          incLoss,
+          icLoss,
+          icCableW: t.totalInterconnCableW,
+          auxW: t.totalAuxW,
+          totalW: t.grandTotalW,
+          totalKW: t.grandTotalKW,
+          evalRes: ev,
+        };
+      }
+
+      const evNormal = evaluateSwitchgear(tempProject, 'normal');
+      const evN1 = evaluateSwitchgear(tempProject, 'n1_transfer');
+      const evFut = evaluateSwitchgear(tempProject, 'normal_future');
+      const evWorst = evaluateSwitchgear(tempProject, 'worst_case');
+
+      const scenarios = {
+        normal: mapEvalToSimple(evNormal),
+        n1_transfer: mapEvalToSimple(evN1),
+        normal_future: mapEvalToSimple(evFut),
+        worst_case: mapEvalToSimple(evWorst),
+      };
+      const active = scenarios[project.activeScenario] || scenarios.normal;
+
+      // Map (col, tier) -> live { iOp, totalW } for instant cell badges
+      const cellMap = {};
+      active.evalRes.columns.forEach((cr) => {
+        cr.tiers.forEach((tr) => {
+          const w = (tr.deviceLoss ? tr.deviceLoss.pTotalW : 0) + (tr.takeoffLossW || 0) + (tr.cableLoss ? tr.cableLoss.totalW : 0);
+          cellMap[`${tr.tier.gridCol}:${tr.tier.gridTier}`] = { iOp: tr.iOp, totalW: w, isActive: tr.isActive };
+        });
+      });
+
+      return {
+        bbPreset,
+        hbbRes,
+        boardLenM: Math.max(1.2, tempCols.length * 0.8),
+        scenarios,
+        active,
+        tempProject,
+        activeEvalRes: active.evalRes,
+        cellMap,
+      };
+    }
+
     const dolTpl = findTpl(sm.dolTemplateId || 'dol-37kw');
     const vsdTpl = findTpl(sm.vsdTemplateId || 'vsd-45kw');
     const fdrTpl = findTpl(sm.feederTemplateId || 'mccb-250');

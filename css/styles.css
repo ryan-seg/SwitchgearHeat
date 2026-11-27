@@ -410,6 +410,66 @@ input:focus, select:focus, textarea:focus {
   color: #fecaca;
 }
 
+/* Simple Mode Tier-by-Tier Grid */
+.sm-tier-grid-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.sm-tier-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.sm-tier-table th,
+.sm-tier-table td {
+  border: 1px solid var(--border);
+  padding: 4px 5px;
+  vertical-align: top;
+}
+.sm-tier-table th {
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-weight: 700;
+  text-align: center;
+}
+.sm-tier-table th input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-0);
+  font-weight: 700;
+  font-size: 11px;
+  text-align: center;
+  padding: 2px;
+}
+.sm-tier-cell select {
+  width: 100%;
+  min-width: 118px;
+  font-size: 10.5px;
+  padding: 3px 4px;
+}
+.sm-tier-badge {
+  margin-top: 3px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+}
+.sm-tier-badge .w {
+  color: var(--warm);
+  font-weight: 700;
+}
+.sm-mini-canvas {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-0);
+  padding: 6px;
+}
+
 /* Main Workspace */
 .workspace {
   display: flex;

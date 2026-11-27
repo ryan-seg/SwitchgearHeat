@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '3.1.0';
+  const APP_VERSION = '3.2.0';
 
   function loadInitialProject() {
     try {
@@ -1401,6 +1401,21 @@
               }
               <div class="load-summary-strip ${tr.isActive && tr.iOp > tier.ratedCurrentA * 1.001 ? 'overload' : ''}">
                 <span><strong>Actual I_op:</strong> ${tr.iOp.toFixed(1)} A (${(dl.loadRatio * 100).toFixed(1)}% of ${tier.ratedCurrentA} A ${tier.frameSize ? esc(tier.frameSize) : 'device'}) · ${tier.phases === '1P' ? '1P ' + Math.round(project.config.voltageV / Math.sqrt(3)) + 'V' : '3P ' + project.config.voltageV + 'V'}</span>
+                ${(() => {
+                  const V = Number(project.config.voltageV || 400);
+                  const pf = Math.min(1, Math.max(0.1, Number(tier.powerFactor) || 0.85));
+                  const eff = Math.min(1, Math.max(0.1, Number(tier.efficiency) || 0.93));
+                  const duty = tier.loadFactor != null ? Number(tier.loadFactor) : 1.0;
+                  const baseA = tier.loadInputMode === 'kw'
+                    ? (tier.phases === '1P' ? (Number(tier.loadKw || 0) * 1000) / ((V / Math.sqrt(3)) * pf * eff) : (Number(tier.loadKw || 0) * 1000) / (Math.sqrt(3) * V * pf * eff))
+                    : Number(tier.operatingCurrentA || 0);
+                  const isFutSc = project.activeScenario === 'normal_future' || project.activeScenario === 'worst_case';
+                  const futPct = isFutSc && tier.status === 'active' ? (Number(project.config.globalFutureGrowthPct) || 0) : 0;
+                  const parts = [`Base ${tier.loadInputMode === 'kw' ? 'FLC' : 'Amps'} ${baseA.toFixed(1)} A`];
+                  if (Math.abs(duty - 1) > 0.001) parts.push(`× Duty ${duty.toFixed(2)}`);
+                  if (futPct > 0) parts.push(`× Future +${futPct}% (scenario)`);
+                  return `<span style="color:var(--text-2);">${parts.join(' ')} = ${tr.iOp.toFixed(1)} A</span>`;
+                })()}
                 ${tier.phases === '1P' ? `<span style="color:var(--text-2);">3P Busbar/Incomer equivalent: ${(tr.iOp / 3).toFixed(1)} A/ph · 2-wire L+N take-off</span>` : ''}
               </div>
             </div>`
@@ -2659,7 +2674,44 @@
     bindRoomCoolingEvents(el, 'det', swgKW);
   }
 
-  // --- SIMPLE MODE WORKSPACE (Rapid Assessment + Seamless Upgrade to Detailed Mode) ---
+  // --- SIMPLE MODE WORKSPACE (Tier-by-Tier Rules-of-Thumb Assessment + Live SLD/GA Preview) ---
+  function renderSimpleTierOptions(selectedId) {
+    const curatedGroups = [
+      { label: 'Incomers, Interconnectors & Couplers', ids: ['acb-1250', 'acb-1600', 'acb-2500', 'interconn-1250', 'interconn-1600', 'coupler-1600'] },
+      { label: 'DOL Starters (3P 400V)', ids: ['dol-7.5kw', 'dol-15kw', 'dol-22kw', 'dol-37kw', 'dol-55kw'] },
+      { label: 'Star-Delta & Soft Starters (3P)', ids: ['sd-37kw', 'sd-75kw', 'sd-110kw', 'ss-30kw', 'ss-75kw'] },
+      { label: 'VSD / Inverter Drives (High Heat!)', ids: ['vsd-7.5kw', 'vsd-15kw', 'vsd-30kw', 'vsd-45kw', 'vsd-75kw', 'vsd-110kw'] },
+      { label: 'Eaton Bussmann HRC Fuses (3P)', ids: ['hrc-63', 'hrc-100', 'hrc-160', 'fuse-250', 'fuse-400', 'hrc-630'] },
+      { label: 'MCCB & MCB Feeders (3P)', ids: ['mcb-32', 'mcb-63', 'mccb-100', 'mccb-160', 'mccb-250', 'mccb-400', 'mccb-630'] },
+      { label: 'Single-Phase 1P (230V)', ids: ['mcb1p-16', 'mcb1p-32', 'rcbo1p-32', 'hrc1p-63', 'dol1p-2.2kw', 'htr1p-32'] },
+      { label: 'Spare / Aux', ids: ['spare-space', 'aux-chamber'] },
+    ];
+    const lib = project.deviceLibrary || [];
+    let html = `<option value="" ${!selectedId ? 'selected' : ''}>— Empty —</option>`;
+    let foundSelected = !selectedId;
+    curatedGroups.forEach((grp) => {
+      html += `<optgroup label="${esc(grp.label)}">`;
+      grp.ids.forEach((id) => {
+        const t = lib.find((x) => x.id === id);
+        if (!t) return;
+        if (selectedId === t.id) foundSelected = true;
+        const shortLabel = t.name
+          .replace('Eaton ', '')
+          .replace(' (Miniature Circuit Breaker)', '')
+          .replace(' (230V Single-Phase)', ' 1P')
+          .replace('Drawout (3P/4P)', '')
+          .replace(' / Inverter Drive', '');
+        html += `<option value="${esc(t.id)}" ${selectedId === t.id ? 'selected' : ''}>${esc(shortLabel)}</option>`;
+      });
+      html += `</optgroup>`;
+    });
+    if (!foundSelected) {
+      const custom = lib.find((x) => x.id === selectedId);
+      if (custom) html += `<option value="${esc(custom.id)}" selected>${esc(custom.name)}</option>`;
+    }
+    return html;
+  }
+
   function renderSimpleWorkspace() {
     const ws = document.getElementById('simple-workspace');
     if (!ws) return;
@@ -2667,123 +2719,176 @@
     const sim = window.SGPhysics.evaluateSimpleMode(project);
     const act = sim.active;
     const rv = window.SGPhysics.calcRoomVentilation(project.room, act.totalKW, project.config.hvacSafetyMarginPct);
+    const isTierGrid = sm.inputStyle !== 'counts';
+    const nRows = Math.max(3, Math.min(6, Number(sm.tierRows) || 6));
 
     const bbPresets = window.SGCatalog.BUSBAR_PRESETS.filter((p) => !p.id.startsWith('bb-v'));
     const dolTemplates = project.deviceLibrary.filter((t) => t.category === 'DOL Starter' || t.category === 'Star-Delta Starter' || t.category === 'Soft Starter');
     const vsdTemplates = project.deviceLibrary.filter((t) => t.category === 'VSD / Inverter');
     const fdrTemplates = project.deviceLibrary.filter((t) => t.category === 'MCCB' || t.category === 'HRC Fuse-Switch' || t.category === 'MCB');
 
+    const miniDiagramSvg =
+      isTierGrid && sim.activeEvalRes && sim.tempProject
+        ? sm.previewDiagram === 'ga'
+          ? window.SGGA.renderGA(sim.tempProject, sim.activeEvalRes, null, { showHeatmap: true, showDimensions: true, showBusbars: true }, 0.62)
+          : window.SGSLD.renderSLD(sim.tempProject, sim.activeEvalRes, null, 0.62)
+        : '';
+
     ws.innerHTML = `
       <div class="simple-grid">
-        <!-- LEFT COLUMN: Minimal Rapid Inputs -->
+        <!-- LEFT COLUMN: Rules-of-Thumb Inputs & Tier-by-Tier Board Grid -->
         <div>
           <div class="card">
-            <h3>⚡ Simple Mode — Rapid Switchgear Heat Estimate <span class="card-subtitle">Fewer inputs for quick preliminary sizing</span></h3>
-            <div class="form-grid">
-              <div class="field full">
+            <h3>
+              ⚡ Simple Mode — Rules-of-Thumb Assessment
+              <div class="action-row">
+                <button class="btn btn-sm ${isTierGrid ? 'btn-primary' : 'btn-secondary'}" data-sm-style="tier_grid">Tier-by-Tier Grid</button>
+                <button class="btn btn-sm ${!isTierGrid ? 'btn-primary' : 'btn-secondary'}" data-sm-style="counts">Quick Counts</button>
+              </div>
+            </h3>
+            <div class="form-grid-3">
+              <div class="field" style="grid-column: span 2;">
                 ${lbl('Main Busbar Rating & Construction', 'bb.preset')}
                 <select id="sm-bb">
                   ${bbPresets.map((p) => `<option value="${p.id}" ${sm.busbarPresetId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
                 </select>
-                <span class="field-hint">Ex: 1250A = 2×75×6mm (900mm²), 1600A = 2×80×8mm, 2500A = 2×100×10mm</span>
-              </div>
-              <div class="field full">
-                ${lbl('Switchboard Topology', 'simple.topology')}
-                <select id="sm-topo">
-                  <option value="single" ${sm.topology === 'single' ? 'selected' : ''}>Single Incomer</option>
-                  <option value="single_interconn" ${sm.topology === 'single_interconn' ? 'selected' : ''}>Single Incomer + Firm Supply Interconnector (A→B)</option>
-                  <option value="dual_coupler" ${sm.topology === 'dual_coupler' ? 'selected' : ''}>Dual Incomer + Bus-Section Coupler</option>
-                  <option value="dual_coupler_interconn" ${sm.topology === 'dual_coupler_interconn' ? 'selected' : ''}>Dual Incomer + Bus Coupler + Interconnector</option>
-                </select>
-                <span class="field-hint">Defines incomer, coupler &amp; A→B interconnector columns</span>
+                <span class="field-hint">1250A = 2×75×6mm (900mm²), 1600A = 2×80×8mm, 2500A = 2×100×10mm</span>
               </div>
               <div class="field">
-                ${lbl('Estimated Columns', 'col.width')}
-                <input type="number" id="sm-cols" value="${sm.columnCount}" min="2" max="14" step="1" />
-                <span class="field-hint">Typ: 4–8 columns (~${sim.boardLenM.toFixed(1)} m busbar)</span>
-              </div>
-              <div class="field">
-                ${lbl('Manual AC Factor (S)', 'bb.manualS')}
+                ${lbl('AC Factor (S)', 'bb.manualS')}
                 <input type="number" id="sm-s" value="${sm.manualSFactor}" min="1.0" max="2.0" step="0.05" />
-                <span class="field-hint">Typ: 1.20 (2-bar Cu)</span>
+                <span class="field-hint">Typ: 1.20</span>
               </div>
             </div>
 
-            <div class="insp-section-title" style="margin-top:12px;">Quick Circuit &amp; Starter Counts</div>
-            <div class="form-grid" style="margin-top:6px;">
+            <div class="form-grid-3" style="margin-top:8px;">
               <div class="field">
-                ${lbl('Motor Starters (Qty)', 'tier.template')}
-                <input type="number" id="sm-dol-n" value="${sm.dolCount}" min="0" max="30" step="1" />
-                <span class="field-hint">DOL / Star-Delta / Soft Starters</span>
-              </div>
-              <div class="field">
-                ${lbl('Typical Starter Size', 'tier.template')}
-                <select id="sm-dol-tpl">
-                  ${dolTemplates.map((t) => `<option value="${t.id}" ${sm.dolTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field">
-                ${lbl('VSD / Inverter Drives (Qty)', 'tier.template')}
-                <input type="number" id="sm-vsd-n" value="${sm.vsdCount}" min="0" max="20" step="1" />
-                <span class="field-hint">High heat (~2.5–3.5% kW)</span>
-              </div>
-              <div class="field">
-                ${lbl('Typical VSD Size', 'tier.template')}
-                <select id="sm-vsd-tpl">
-                  ${vsdTemplates.map((t) => `<option value="${t.id}" ${sm.vsdTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
-                </select>
-              </div>
-              <div class="field">
-                ${lbl('Outgoing Feeders / Fuses (Qty)', 'tier.template')}
-                <input type="number" id="sm-fdr-n" value="${sm.feederCount}" min="0" max="30" step="1" />
-                <span class="field-hint">MCCBs or Eaton HRC Fuse-Switches</span>
-              </div>
-              <div class="field">
-                ${lbl('Typical Feeder / HRC Fuse', 'tier.template')}
-                <select id="sm-fdr-tpl">
-                  ${fdrTemplates.map((t) => `<option value="${t.id}" ${sm.feederTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
-                </select>
-              </div>
-            </div>
-
-            <div class="form-grid-3" style="margin-top:10px;">
-              <div class="field">
-                ${lbl('Avg Load (%)', 'simple.loadPct')}
+                ${lbl('Rule-of-Thumb Load (%)', 'simple.loadPct')}
                 <input type="number" id="sm-load" value="${sm.avgLoadPct}" min="10" max="100" step="5" />
-                <span class="field-hint">Typ: 70–80%</span>
+                <span class="field-hint">Applied to all tiers (75% typ.)</span>
               </div>
               <div class="field">
                 ${lbl('Board RDF', 'cfg.rdf')}
                 <input type="number" id="sm-rdf" value="${sm.rdf}" min="0.4" max="1.0" step="0.05" />
-                <span class="field-hint">Typ: 0.80–0.90</span>
+                <span class="field-hint">Diversity: 0.80–0.90</span>
               </div>
               <div class="field">
                 ${lbl('Future Growth (%)', 'cfg.growth')}
                 <input type="number" id="sm-fut" value="${sm.futureGrowthPct}" min="0" max="100" step="5" />
-                <span class="field-hint">Typ: 15–25%</span>
+                <span class="field-hint">Typ: 15–20%</span>
               </div>
             </div>
+
+            <div class="form-grid" style="margin-top:8px;">
+              <div class="field">
+                ${lbl('N-1 Interconnector Transfer (A)', 'tier.n1Transfer')}
+                <input type="number" id="sm-n1" value="${sm.n1TransferA}" min="0" max="4000" step="50" />
+                <span class="field-hint">Used if an Interconnector tier is placed</span>
+              </div>
+              ${
+                isTierGrid
+                  ? `<div class="field">
+                      <label>Grid Size (${sm.tierGrid.length} Cols × ${nRows} Tiers)</label>
+                      <div class="action-row">
+                        <button id="sm-grid-add-col" class="btn btn-sm btn-secondary" ${sm.tierGrid.length >= 8 ? 'disabled' : ''}>+ Col</button>
+                        <button id="sm-grid-rem-col" class="btn btn-sm btn-secondary" ${sm.tierGrid.length <= 2 ? 'disabled' : ''}>− Col</button>
+                        <select id="sm-tier-rows" style="width:88px;">
+                          ${[4, 5, 6].map((n) => `<option value="${n}" ${nRows === n ? 'selected' : ''}>${n} Tiers</option>`).join('')}
+                        </select>
+                      </div>
+                      <span class="field-hint">Place any device on any column &amp; tier</span>
+                    </div>`
+                  : `<div class="field">
+                      ${lbl('Switchboard Topology', 'simple.topology')}
+                      <select id="sm-topo">
+                        <option value="single" ${sm.topology === 'single' ? 'selected' : ''}>Single Incomer</option>
+                        <option value="single_interconn" ${sm.topology === 'single_interconn' ? 'selected' : ''}>Single Incomer + Interconnector (A→B)</option>
+                        <option value="dual_coupler" ${sm.topology === 'dual_coupler' ? 'selected' : ''}>Dual Incomer + Bus Coupler</option>
+                        <option value="dual_coupler_interconn" ${sm.topology === 'dual_coupler_interconn' ? 'selected' : ''}>Dual Incomer + Coupler + Interconnector</option>
+                      </select>
+                    </div>`
+              }
+            </div>
+
             ${
-              sm.topology === 'single_interconn' || sm.topology === 'dual_coupler_interconn'
-                ? `<div class="field" style="margin-top:8px;">
-                    ${lbl('N-1 Interconnector Transfer Load to B-Side Board (A)', 'tier.n1Transfer')}
-                    <input type="number" id="sm-n1" value="${sm.n1TransferA}" min="0" max="4000" step="50" />
-                    <span class="field-hint">Typ: 600–1600 A exported during N-1 firm-supply outage</span>
-                  </div>`
-                : ''
+              isTierGrid
+                ? `<div class="insp-section-title" style="margin-top:12px;">Tier-by-Tier Quick Device Arrangement (Rules of Thumb: PF 0.86, η 93%, Load ${sm.avgLoadPct}%)</div>
+                   <div class="sm-tier-grid-wrap">
+                     <table class="sm-tier-table">
+                       <thead>
+                         <tr>
+                           <th style="width:42px;">Tier</th>
+                           ${sm.tierGrid.map((gCol, cIdx) => `<th><input type="text" data-sm-col-name="${cIdx}" value="${esc(gCol.name || 'COL-0' + (cIdx + 1))}" /></th>`).join('')}
+                         </tr>
+                       </thead>
+                       <tbody>
+                         ${Array.from({ length: nRows }, (_, tIdx) => `
+                           <tr>
+                             <td style="text-align:center;font-weight:700;color:var(--text-2);background:var(--bg-2);">T${tIdx + 1}</td>
+                             ${sm.tierGrid.map((gCol, cIdx) => {
+                               const val = (gCol.tiers && gCol.tiers[tIdx]) || '';
+                               const cellInfo = sim.cellMap && sim.cellMap[`${cIdx}:${tIdx}`];
+                               return `<td class="sm-tier-cell">
+                                 <select data-sm-cell="${cIdx}:${tIdx}">${renderSimpleTierOptions(val)}</select>
+                                 ${cellInfo ? `<div class="sm-tier-badge"><span>${cellInfo.iOp.toFixed(0)} A</span><span class="w">${cellInfo.totalW.toFixed(0)} W</span></div>` : ''}
+                               </td>`;
+                             }).join('')}
+                           </tr>
+                         `).join('')}
+                       </tbody>
+                     </table>
+                   </div>`
+                : `<div class="insp-section-title" style="margin-top:12px;">Quick Circuit &amp; Starter Counts</div>
+                   <div class="form-grid" style="margin-top:6px;">
+                     <div class="field">
+                       ${lbl('Estimated Columns', 'col.width')}
+                       <input type="number" id="sm-cols" value="${sm.columnCount}" min="2" max="14" step="1" />
+                     </div>
+                     <div class="field"></div>
+                     <div class="field">
+                       ${lbl('Motor Starters (Qty)', 'tier.template')}
+                       <input type="number" id="sm-dol-n" value="${sm.dolCount}" min="0" max="30" step="1" />
+                     </div>
+                     <div class="field">
+                       ${lbl('Typical Starter Size', 'tier.template')}
+                       <select id="sm-dol-tpl">
+                         ${dolTemplates.map((t) => `<option value="${t.id}" ${sm.dolTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+                       </select>
+                     </div>
+                     <div class="field">
+                       ${lbl('VSD / Inverter Drives (Qty)', 'tier.template')}
+                       <input type="number" id="sm-vsd-n" value="${sm.vsdCount}" min="0" max="20" step="1" />
+                     </div>
+                     <div class="field">
+                       ${lbl('Typical VSD Size', 'tier.template')}
+                       <select id="sm-vsd-tpl">
+                         ${vsdTemplates.map((t) => `<option value="${t.id}" ${sm.vsdTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+                       </select>
+                     </div>
+                     <div class="field">
+                       ${lbl('Outgoing Feeders / Fuses (Qty)', 'tier.template')}
+                       <input type="number" id="sm-fdr-n" value="${sm.feederCount}" min="0" max="30" step="1" />
+                     </div>
+                     <div class="field">
+                       ${lbl('Typical Feeder / HRC Fuse', 'tier.template')}
+                       <select id="sm-fdr-tpl">
+                         ${fdrTemplates.map((t) => `<option value="${t.id}" ${sm.feederTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+                       </select>
+                     </div>
+                   </div>`
             }
           </div>
 
           <div class="expand-cta-box">
             <div>
-              <div style="font-weight:800;font-size:13.5px;color:var(--text-0);">Ready to refine individual circuits, SLD &amp; GA?</div>
-              <div style="font-size:11.5px;color:var(--text-2);">Auto-generates columns, incomers, starters, Eaton HRC fuses &amp; busbars directly from your Simple Mode inputs above.</div>
+              <div style="font-weight:800;font-size:13.5px;color:var(--text-0);">Ready for full Detailed Mode refinement?</div>
+              <div style="font-size:11.5px;color:var(--text-2);">Transfers your exact ${isTierGrid ? 'column-by-column tier layout' : 'Simple Mode counts'} &amp; busbar spec into Detailed Mode for custom kW, PF, cable losses &amp; reports.</div>
             </div>
             <button id="sm-expand-btn" class="btn btn-primary">→ Convert &amp; Open Detailed Mode</button>
           </div>
         </div>
 
-        <!-- RIGHT COLUMN: Instant Live kW Results + Switchroom Cooling Assessment -->
+        <!-- RIGHT COLUMN: Instant Live kW Results + Switchroom Cooling Assessment + Live SLD/GA Preview -->
         <div>
           <div class="card">
             <h3>
@@ -2848,6 +2953,21 @@
           </div>
 
           ${renderRoomCoolingCardHTML(rv, project.room, 'sm')}
+
+          ${
+            miniDiagramSvg
+              ? `<div class="card">
+                  <h3>
+                    Live Graphical Switchboard Preview (Heat Map)
+                    <div class="action-row">
+                      <button class="btn btn-sm ${sm.previewDiagram !== 'ga' ? 'btn-primary' : 'btn-secondary'}" data-sm-diag="sld">SLD View</button>
+                      <button class="btn btn-sm ${sm.previewDiagram === 'ga' ? 'btn-primary' : 'btn-secondary'}" data-sm-diag="ga">GA Elevation</button>
+                    </div>
+                  </h3>
+                  <div class="sm-mini-canvas">${miniDiagramSvg}</div>
+                </div>`
+              : ''
+          }
         </div>
       </div>
     `;
@@ -2871,6 +2991,66 @@
     onSm('sm-rdf', (v) => (sm.rdf = Math.min(1, Math.max(0.3, Number(v) || 0.9))));
     onSm('sm-fut', (v) => (sm.futureGrowthPct = Math.max(0, Number(v) || 0)));
     onSm('sm-n1', (v) => (sm.n1TransferA = Math.max(0, Number(v) || 0)));
+    onSm('sm-tier-rows', (v) => (sm.tierRows = Math.max(3, Math.min(6, parseInt(v, 10) || 6))));
+
+    ws.querySelectorAll('[data-sm-style]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        pushUndo();
+        sm.inputStyle = btn.dataset.smStyle;
+        renderAll();
+      });
+    });
+
+    ws.querySelectorAll('[data-sm-diag]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        sm.previewDiagram = btn.dataset.smDiag;
+        renderAll(true);
+      });
+    });
+
+    const addColBtn = document.getElementById('sm-grid-add-col');
+    if (addColBtn) {
+      addColBtn.addEventListener('click', () => {
+        if (sm.tierGrid.length >= 8) return;
+        pushUndo();
+        sm.tierGrid.push({ name: `COL-0${sm.tierGrid.length + 1}`, tiers: ['', '', '', '', '', ''] });
+        sm.columnCount = sm.tierGrid.length;
+        renderAll();
+      });
+    }
+    const remColBtn = document.getElementById('sm-grid-rem-col');
+    if (remColBtn) {
+      remColBtn.addEventListener('click', () => {
+        if (sm.tierGrid.length <= 2) return;
+        pushUndo();
+        sm.tierGrid.pop();
+        sm.columnCount = sm.tierGrid.length;
+        renderAll();
+      });
+    }
+
+    ws.querySelectorAll('[data-sm-col-name]').forEach((inp) => {
+      inp.addEventListener('change', () => {
+        const idx = Number(inp.dataset.smColName);
+        if (sm.tierGrid[idx]) {
+          pushUndo();
+          sm.tierGrid[idx].name = inp.value;
+          renderAll();
+        }
+      });
+    });
+
+    ws.querySelectorAll('[data-sm-cell]').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const [cIdx, tIdx] = sel.dataset.smCell.split(':').map(Number);
+        if (sm.tierGrid[cIdx]) {
+          pushUndo();
+          if (!Array.isArray(sm.tierGrid[cIdx].tiers)) sm.tierGrid[cIdx].tiers = ['', '', '', '', '', ''];
+          sm.tierGrid[cIdx].tiers[tIdx] = sel.value;
+          renderAll();
+        }
+      });
+    });
 
     ws.querySelectorAll('[data-sm-sc]').forEach((btn) => {
       btn.addEventListener('click', () => {
