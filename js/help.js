@@ -451,6 +451,73 @@ window.SGHelp = (function () {
       typical: 'Drives exact Horizontal Busbar (HBB) and Vertical Dropper Busbar (VBB) conductor lengths in metres.',
       tip: 'Toggle the Thermal Heatmap overlay to spot hot compartments (like Variable Speed Drives) and high W/m busbar spans.',
     },
+
+    // --- Switchroom Cooling & Ventilation ---
+    'room.dims': {
+      title: 'Switchroom Internal Dimensions (Length × Width × Height in Metres)',
+      what: 'Internal clear dimensions of the electrical switchroom, used to calculate Room Volume (m³), Floor Area (m²), Air Change Rate per Hour (ACH), and thermal heat density (W/m²).',
+      where: 'Architectural floor plan and building section drawing.',
+      typical: 'Example: 5 m × 5 m × 9 m = 225 m³ (industrial plant switchroom), or 6 m × 4 m × 3.5 m = 84 m³ (standard substation room).',
+      tip: 'Taller rooms allow larger vertical Stack Height (H_stack), boosting natural buoyancy ventilation.',
+    },
+    'room.tamb': {
+      title: 'Outdoor / Supply Air Design Temperature (T_amb) in °C',
+      what: 'Maximum design temperature of incoming fresh cooling air entering the switchroom (outdoor summer ambient or adjacent corridor supply temperature).',
+      where: 'Chartered Institution of Building Services Engineers (CIBSE) Guide A / ASHRAE local summer design weather data.',
+      typical: 'UK/Northern Europe summer design: 25 °C – 28 °C · Warm industrial / Southern Europe: 30 °C – 35 °C · Middle East: 40 °C – 46 °C.',
+      tip: 'Allowable temperature rise ΔT = T_max − T_amb. If T_amb approaches T_max, Active Air Conditioning (DX / Chilled Water) becomes mandatory.',
+    },
+    'room.tmax': {
+      title: 'Maximum Permitted Switchroom Temperature (T_max) in °C',
+      what: 'Upper ambient air temperature limit allowed inside the switchroom around the switchgear enclosure.',
+      where: 'International Electrotechnical Commission (IEC) 61439-1 ambient limits and Variable Speed Drive (VSD) / Uninterruptible Power Supply (UPS) vendor derating limits.',
+      typical: 'IEC 61439-1 standard: 35 °C (24-hour average) / 40 °C (peak). VSDs/PLCs often derate above 40 °C; batteries prefer 20 °C – 25 °C.',
+      tip: 'Higher ΔT reduces required airflow linearly (Q = V̇ · ρ · cp · ΔT), but never exceed equipment derating limits.',
+    },
+    'room.other': {
+      title: 'Other Room Heat Gains (Transformers, UPS, Lighting, Solar) in kW',
+      what: 'Additional sensible heat sources inside the same switchroom besides this switchboard (e.g. second switchboard, dry-type transformer, Uninterruptible Power Supply, lighting, solar fabric gains).',
+      where: 'Electrical room heat-load schedule and Mechanical, Electrical & Plumbing (MEP) building thermal model.',
+      typical: '0.2–0.5 kW (LED lighting & small power), 1–5 kW (UPS / battery chargers), 5–15 kW (indoor dry-type transformer).',
+      tip: 'Added directly to the design switchgear heat load when sizing airflow and fans.',
+    },
+    'room.louver': {
+      title: 'Natural Ventilation Louver Free Area (Each: Inlet & Exhaust) in m²',
+      what: 'Net aerodynamic FREE opening area (typically ~45%–55% of gross louver face area after accounting for rain blades and insect mesh) of the low-level air inlet AND matching high-level air exhaust louver.',
+      where: 'Architectural / Heating, Ventilation, and Air Conditioning (HVAC) louver schedule.',
+      typical: '0.30 m² – 1.50 m² free area (a 1.0 m × 1.0 m weather louver with 50% free area gives 0.50 m² free area).',
+      tip: 'Used in CIBSE Guide A stack-effect buoyancy calculation to test whether natural ventilation alone is sufficient.',
+    },
+    'room.stack': {
+      title: 'Vertical Stack Height Between Inlet & Exhaust Louvers (H_stack) in m',
+      what: 'Vertical height difference between the centreline of the low-level cool-air intake louver and the centreline of the high-level hot-air exhaust louver.',
+      where: 'Switchroom wall elevation / architectural section.',
+      typical: 'Typically Room Height minus 1.0–1.5 m (e.g. 6.0 m – 7.5 m in a 9 m high room; 2.0 m in a 3.5 m room).',
+      tip: 'Natural buoyancy airflow increases with √(H_stack): placing exhaust louvers as high as possible maximises natural cooling.',
+    },
+    'room.override': {
+      title: 'Manual Heat Load Override Test (kW)',
+      what: 'Optional what-if override allowing you to test any arbitrary switchgear heat dissipation (e.g. 6.0 kW) directly against your switchroom volume and temperatures without editing the switchboard.',
+      where: 'Use for rapid sensitivity checks or verifying third-party vendor kW figures.',
+      typical: 'Unchecked = uses live calculated Switchgear Heat Output (kW) automatically. Checked = uses your typed test kW.',
+      tip: 'Great for quickly checking scenarios like "6 kW in a 5 × 5 × 9 m room".',
+    },
+
+    // --- Simple Mode ---
+    'simple.topology': {
+      title: 'Switchboard Topology (Simple Mode)',
+      what: 'High-level arrangement of incoming supplies, Bus-Section Coupler (BC), and Firm-Supply Interconnector (IC) to an adjacent B-Side switchboard.',
+      where: 'Preliminary site Single Line Diagram (SLD).',
+      typical: 'Single Incomer + Interconnector is standard for A/B firm-supply switchrooms.',
+      tip: 'When you click "Expand to Detailed Mode", all columns and incomers/couplers/interconnectors are generated automatically from this choice.',
+    },
+    'simple.loadPct': {
+      title: 'Average Running Load (% of Rated Equipment)',
+      what: 'Rough average utilisation across all motors and outgoing feeders for a preliminary crude heat assessment.',
+      where: 'Early-stage engineering estimate before full motor/load lists are finalised.',
+      typical: '65% – 80% (75% is a realistic industrial running average; 85–90% is conservative).',
+      tip: 'Applied cleanly to all generated circuits if you expand into Detailed Mode.',
+    },
   };
 
   let tipEl = null;

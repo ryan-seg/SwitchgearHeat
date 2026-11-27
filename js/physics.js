@@ -855,6 +855,300 @@ window.SGPhysics = (function () {
     }));
   }
 
+  /**
+   * Switchroom Cooling, Airflow, Air Change Rate (ACH) & Natural vs Mechanical Ventilation Engine
+   * Basis: Sensible heat balance Q = V_dot * rho * cp * dT and CIBSE Guide A / AM10 stack buoyancy.
+   */
+  function calcRoomVentilation(room, switchgearKW, hvacMarginPct) {
+    const L = Math.max(1, Number(room.lengthM) || 5);
+    const W = Math.max(1, Number(room.widthM) || 5);
+    const H = Math.max(2, Number(room.heightM) || 9);
+    const volumeM3 = L * W * H;
+    const floorAreaM2 = L * W;
+
+    const tAmb = Number(room.ambientTempC != null ? room.ambientTempC : 25);
+    const tMax = Number(room.maxRoomTempC != null ? room.maxRoomTempC : 35);
+    const deltaT = tMax - tAmb;
+
+    const otherHeatKW = Math.max(0, Number(room.otherRoomHeatKW) || 0);
+    const marginPct = Math.max(0, Number(hvacMarginPct != null ? hvacMarginPct : 15));
+    const useOverride = Boolean(room.useOverrideHeatKW);
+    const baseSwgKW = useOverride ? Math.max(0, Number(room.overrideHeatKW) || 0) : Math.max(0, Number(switchgearKW) || 0);
+    const designHeatKW = baseSwgKW * (1 + marginPct / 100) + otherHeatKW;
+    const designHeatW = designHeatKW * 1000;
+    const designBtuHr = designHeatW * 3.41214;
+
+    // Air properties at average room temperature
+    const tAvgC = (tAmb + Math.max(tAmb + 1, tMax)) / 2;
+    const rhoAir = 353 / (tAvgC + 273.15); // kg/m³ (~1.16–1.20 kg/m³)
+    const cpAir = 1.005; // kJ/(kg·K)
+    const rhoCp = rhoAir * cpAir; // kJ/(m³·K)
+
+    // Required airflow (only valid when deltaT > 0)
+    const canVentilate = deltaT > 0.5;
+    const reqFlowM3s = canVentilate ? designHeatKW / (rhoCp * deltaT) : 0;
+    const reqFlowLs = reqFlowM3s * 1000;
+    const reqFlowM3h = reqFlowM3s * 3600;
+    const reqFlowCfm = reqFlowM3h * 0.58858;
+    const ach = volumeM3 > 0 ? reqFlowM3h / volumeM3 : 0;
+
+    // Natural Stack-Effect Buoyancy Ventilation (CIBSE Guide A / AM10)
+    // Equal low-level inlet and high-level exhaust louvers of free area A_louver each:
+    // Effective combined area A_eff = A_louver / sqrt(2), discharge coeff Cd = 0.60
+    const louverAreaM2 = Math.max(0.05, Number(room.louverFreeAreaM2) || 0.5);
+    const stackHeightM = Math.max(0.5, Math.min(H, Number(room.stackHeightM) || Math.max(1.5, H - 1.5)));
+    const cd = Math.min(0.8, Math.max(0.3, Number(room.dischargeCoeff) || 0.6));
+    const g = 9.81;
+    const aEff = louverAreaM2 / Math.SQRT2;
+
+    const natFlowM3s =
+      canVentilate
+        ? cd * aEff * Math.sqrt((2 * g * stackHeightM * deltaT) / (tAmb + 273.15))
+        : 0;
+    const natFlowLs = natFlowM3s * 1000;
+    const natFlowM3h = natFlowM3s * 3600;
+    const natAch = volumeM3 > 0 ? natFlowM3h / volumeM3 : 0;
+    const natCapacityKW = canVentilate ? natFlowM3s * rhoCp * deltaT : 0;
+
+    // Required louver free area (each: inlet & exhaust) to achieve natural ventilation alone
+    const reqLouverAreaM2 =
+      canVentilate && stackHeightM > 0
+        ? (reqFlowM3s * Math.SQRT2) / (cd * Math.sqrt((2 * g * stackHeightM * deltaT) / (tAmb + 273.15)))
+        : 999;
+
+    // Resulting steady-state room temperature under natural ventilation alone:
+    // Q = Cd * A_eff * rhoCp * sqrt(2*g*H/(Tamb+273.15)) * dT^(3/2)  =>  dT_nat = (Q / K)^(2/3)
+    const kNat = cd * aEff * rhoCp * Math.sqrt((2 * g * stackHeightM) / (tAmb + 273.15));
+    const estNatDeltaT = kNat > 0 && designHeatKW > 0 ? Math.pow(designHeatKW / kNat, 2 / 3) : 0;
+    const estNatRoomTempC = tAmb + estNatDeltaT;
+
+    // Engineering Verdict: Natural vs Mechanical Ventilation vs Active Cooling (AC)
+    let verdictCode = 'natural';
+    let verdictTitle = 'Natural Ventilation Sufficient';
+    let verdictColor = '#22c55e';
+    let verdictDetail = '';
+
+    if (deltaT <= 2.0) {
+      verdictCode = 'active_ac';
+      verdictTitle = 'Active Cooling (Air Conditioning / Chilled Water) Required';
+      verdictColor = '#ef4444';
+      verdictDetail = `Allowable temperature rise ΔT = ${deltaT.toFixed(1)} K is too narrow (ambient ${tAmb}°C vs max ${tMax}°C). Outside-air ventilation alone cannot cool the room; install DX air conditioning or chilled-water cooling sized for ≥ ${designHeatKW.toFixed(2)} kW sensible heat.`;
+    } else if (natFlowM3s >= reqFlowM3s && ach <= 6.0) {
+      verdictCode = 'natural';
+      verdictTitle = 'Natural Ventilation Sufficient';
+      verdictColor = '#22c55e';
+      verdictDetail = `Stack-effect buoyancy through ${louverAreaM2.toFixed(2)} m² low/high louvers provides ${natFlowM3h.toFixed(0)} m³/h (${natCapacityKW.toFixed(2)} kW capacity), exceeding the ${reqFlowM3h.toFixed(0)} m³/h (${ach.toFixed(1)} ACH) needed to hold room temperature ≤ ${tMax}°C (est. ${estNatRoomTempC.toFixed(1)}°C).`;
+    } else if (ach <= 20.0 && deltaT >= 5.0) {
+      verdictCode = 'mechanical';
+      verdictTitle = 'Mechanical Ventilation (Forced Extract / Supply Fans) Required';
+      verdictColor = '#f59e0b';
+      verdictDetail = `Natural ventilation capacity (${natCapacityKW.toFixed(2)} kW, est. room temp ${estNatRoomTempC.toFixed(1)}°C) is below the ${designHeatKW.toFixed(2)} kW heat load. Provide duty/standby mechanical ventilation fans rated for ${reqFlowLs.toFixed(0)} L/s (${reqFlowM3h.toFixed(0)} m³/h · ${ach.toFixed(1)} ACH)${ach > 12 ? ' — note >12 ACH may warrant noise/filtration checks or Active DX cooling.' : '.'}`;
+    } else {
+      verdictCode = 'active_ac';
+      verdictTitle = 'Active Cooling (Air Conditioning) Recommended';
+      verdictColor = '#ef4444';
+      verdictDetail = `Required air change rate (${ach.toFixed(1)} ACH / ${reqFlowM3h.toFixed(0)} m³/h) or narrow ΔT (${deltaT.toFixed(1)} K) makes fresh-air mechanical ventilation impractical. Install active DX/chilled-water cooling rated for ≥ ${designHeatKW.toFixed(2)} kW sensible cooling.`;
+    }
+
+    return {
+      L, W, H,
+      volumeM3,
+      floorAreaM2,
+      tAmb,
+      tMax,
+      deltaT,
+      baseSwgKW,
+      useOverride,
+      otherHeatKW,
+      marginPct,
+      designHeatKW,
+      designHeatW,
+      designBtuHr,
+      heatDensityFloorWm2: floorAreaM2 > 0 ? designHeatW / floorAreaM2 : 0,
+      heatDensityVolWm3: volumeM3 > 0 ? designHeatW / volumeM3 : 0,
+      rhoAir,
+      cpAir,
+      rhoCp,
+      reqFlowM3s,
+      reqFlowLs,
+      reqFlowM3h,
+      reqFlowCfm,
+      ach,
+      louverAreaM2,
+      stackHeightM,
+      cd,
+      natFlowM3s,
+      natFlowLs,
+      natFlowM3h,
+      natAch,
+      natCapacityKW,
+      reqLouverAreaM2,
+      estNatRoomTempC,
+      verdictCode,
+      verdictTitle,
+      verdictColor,
+      verdictDetail,
+    };
+  }
+
+  /**
+   * Rapid Crude Assessment Engine for Simple Mode
+   * Uses a handful of high-level entries and produces live 4-scenario kW estimates
+   * consistent with the Detailed Mode physics.
+   */
+  function evaluateSimpleMode(project) {
+    const sm = project.simpleMode;
+    const cfg = project.config;
+    const presets = window.SGCatalog.BUSBAR_PRESETS;
+    const bbPreset = presets.find((p) => p.id === sm.busbarPresetId) || presets[3]; // default 1600A 2x75x6
+
+    const hbbSpec = {
+      material: sm.material || 'cu_100',
+      barsPerPhase: bbPreset.barsPerPhase,
+      widthMm: bbPreset.widthMm,
+      thicknessMm: bbPreset.thicknessMm,
+      gapMm: bbPreset.gapMm,
+      phaseSpacingMm: bbPreset.phaseSpacingMm,
+      orientation: 'edge',
+      operatingTempC: Number(sm.busbarTempC || 70),
+      acFactorMode: 'manual',
+      manualSFactor: Number(sm.manualSFactor || 1.2),
+      enclosureEddyFactor: 0.02,
+      neutralSizeRatio: 0.5,
+      ratedCurrentA: bbPreset.ratedCurrentA,
+    };
+    const hbbRes = calcBusbarResistance(hbbSpec, cfg.frequencyHz || 50);
+
+    const vbbPreset = presets.find((p) => p.id === 'bb-v800') || presets[0];
+    const vbbSpec = {
+      material: sm.material || 'cu_100',
+      barsPerPhase: vbbPreset.barsPerPhase,
+      widthMm: vbbPreset.widthMm,
+      thicknessMm: vbbPreset.thicknessMm,
+      gapMm: vbbPreset.gapMm,
+      phaseSpacingMm: vbbPreset.phaseSpacingMm,
+      orientation: 'edge',
+      operatingTempC: Number(sm.busbarTempC || 70),
+      acFactorMode: 'manual',
+      manualSFactor: 1.15,
+      enclosureEddyFactor: 0.02,
+      neutralSizeRatio: 0.5,
+      ratedCurrentA: 800,
+    };
+    const vbbRes = calcBusbarResistance(vbbSpec, cfg.frequencyHz || 50);
+
+    const V = Number(cfg.voltageV || 400);
+    const rdf = Math.min(1, Math.max(0.3, Number(sm.rdf != null ? sm.rdf : 0.9)));
+    const futurePct = Math.max(0, Number(sm.futureGrowthPct || 0)) / 100;
+    const loadPct = Math.min(1.0, Math.max(0.1, Number(sm.avgLoadPct || 75) / 100));
+
+    // Look up representative starter / VSD / feeder templates from catalog
+    const lib = project.deviceLibrary || window.SGCatalog.DEFAULT_DEVICE_TEMPLATES;
+    const findTpl = (id) => lib.find((t) => t.id === id) || lib[0];
+
+    const dolTpl = findTpl(sm.dolTemplateId || 'dol-37kw');
+    const vsdTpl = findTpl(sm.vsdTemplateId || 'vsd-45kw');
+    const fdrTpl = findTpl(sm.feederTemplateId || 'mccb-250');
+    const incTpl = findTpl(bbPreset.ratedCurrentA >= 2500 ? 'acb-2500' : 'acb-1600');
+    const icTpl  = findTpl('interconn-1600');
+
+    const nDol = Math.max(0, parseInt(sm.dolCount, 10) || 0);
+    const nVsd = Math.max(0, parseInt(sm.vsdCount, 10) || 0);
+    const nFdr = Math.max(0, parseInt(sm.feederCount, 10) || 0);
+    const hasInterconn = sm.topology === 'single_interconn' || sm.topology === 'dual_coupler_interconn';
+    const nIncomers = sm.topology === 'dual_coupler' || sm.topology === 'dual_coupler_interconn' ? 2 : 1;
+    const n1TransferA = hasInterconn ? Math.max(0, Number(sm.n1TransferA) || 0) : 0;
+
+    // Per-unit operating currents
+    const iDolBase = dolTpl.defaultKw
+      ? ((dolTpl.defaultKw * 1000) / (Math.sqrt(3) * V * 0.86 * 0.93)) * loadPct
+      : dolTpl.ratedCurrentA * loadPct;
+    const iVsdBase = vsdTpl.defaultKw
+      ? ((vsdTpl.defaultKw * 1000) / (Math.sqrt(3) * V * 0.95 * 0.94)) * loadPct
+      : vsdTpl.ratedCurrentA * loadPct;
+    const iFdrBase = fdrTpl.ratedCurrentA * loadPct;
+
+    const boardLenM = Math.max(1.2, (Number(sm.columnCount) || 5) * 0.78);
+    const vbbLenTotalM = Math.max(1.0, ((Number(sm.columnCount) || 5) - nIncomers) * 1.35);
+
+    function solveOne(includeFuture, isN1) {
+      const mul = includeFuture ? 1 + futurePct : 1;
+      const iDol = iDolBase * mul;
+      const iVsd = iVsdBase * mul;
+      const iFdr = iFdrBase * mul;
+
+      const dolLoss = calcDeviceLoss(dolTpl, iDol, V, nDol > 0).pTotalW * nDol;
+      const vsdLoss = calcDeviceLoss(vsdTpl, iVsd, V, nVsd > 0).pTotalW * nVsd;
+      const fdrLoss = calcDeviceLoss(fdrTpl, iFdr, V, nFdr > 0).pTotalW * nFdr;
+
+      const localDivA = (nDol * iDol + nVsd * iVsd + nFdr * iFdr) * rdf;
+      const icA = isN1 ? n1TransferA : 0;
+      const totalBoardA = localDivA + icA;
+      const perIncA = totalBoardA / nIncomers;
+
+      const incLoss = calcDeviceLoss(incTpl, perIncA, V, true).pTotalW * nIncomers;
+      const icLoss = icA > 0 ? calcDeviceLoss(icTpl, icA, V, true).pTotalW : 0;
+
+      // Tapered effective HBB current: local loads taper linearly (~1/sqrt(3) RMS average along board)
+      // while N-1 interconnector carries full icA across the board length!
+      const hbbRmsA = Math.sqrt((localDivA * localDivA) / 3 + icA * icA + localDivA * icA);
+      const hbbLossW = calcBusbarLossPerMetre(hbbRes, hbbRmsA, cfg.poles || '3P+N', cfg.neutralCurrentRatio || 0.1).wPerMTotal * boardLenM;
+      const hbbPeakWPerM = calcBusbarLossPerMetre(hbbRes, totalBoardA, cfg.poles || '3P+N', cfg.neutralCurrentRatio || 0.1).wPerMTotal;
+
+      // Tapering VBB loss across load columns
+      const loadCols = Math.max(1, (Number(sm.columnCount) || 5) - nIncomers);
+      const avgColA = localDivA / loadCols;
+      const vbbLossW = calcBusbarLossPerMetre(vbbRes, avgColA * 0.65, cfg.poles || '3P+N', cfg.neutralCurrentRatio || 0.1).wPerMTotal * vbbLenTotalM;
+
+      // Bolted joints + take-off tails + optional interconnector cable allowance
+      const jointR = (Number(cfg.jointResistanceUOhm != null ? cfg.jointResistanceUOhm : 5)) * 1e-6;
+      const jointsW = 3 * (hbbRmsA * hbbRmsA) * jointR * Math.max(1, (Number(sm.columnCount) || 5) - 1) + 6 * (perIncA * perIncA) * jointR * nIncomers;
+      const icCableW = icA > 0 ? 3 * icA * icA * (0.017241 * 1.1965 / (3 * 240)) * 1.05 * 2.5 : 0;
+      const auxW = Number(cfg.auxiliaryLossesW || 120);
+
+      const busbarW = hbbLossW + vbbLossW + jointsW;
+      const devicesW = dolLoss + vsdLoss + fdrLoss + incLoss + icLoss;
+      const totalW = busbarW + devicesW + icCableW + auxW;
+
+      return {
+        totalBoardA,
+        localDivA,
+        icA,
+        hbbPeakWPerM,
+        busbarW,
+        hbbLossW,
+        vbbLossW,
+        jointsW,
+        devicesW,
+        dolLoss,
+        vsdLoss,
+        fdrLoss,
+        incLoss,
+        icLoss,
+        icCableW,
+        auxW,
+        totalW,
+        totalKW: totalW / 1000,
+      };
+    }
+
+    const scenarios = {
+      normal: solveOne(false, false),
+      n1_transfer: solveOne(false, true),
+      normal_future: solveOne(true, false),
+      worst_case: solveOne(true, true),
+    };
+    const active = scenarios[project.activeScenario] || scenarios.normal;
+
+    return {
+      bbPreset,
+      hbbRes,
+      boardLenM,
+      scenarios,
+      active,
+    };
+  }
+
   return {
     MATERIALS,
     calcBusbarResistance,
@@ -862,6 +1156,8 @@ window.SGPhysics = (function () {
     calcFeederCurrent,
     calcDeviceLoss,
     calcCableLoss,
+    calcRoomVentilation,
+    evaluateSimpleMode,
     evaluateSwitchgear,
     evaluateAllScenarios,
   };

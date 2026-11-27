@@ -887,6 +887,111 @@ window.SGExplain = (function () {
       };
     }
 
+    // 11. Switchroom Cooling, Airflow, ACH & Natural vs Mechanical Ventilation — Fully Editable!
+    if (key === 'room.ventilation') {
+      window.SGState.ensureExtras(project);
+      const rm = project.room;
+      const baseSwgKW = ctx.switchgearKW != null ? ctx.switchgearKW : t.grandTotalKW;
+      const rv = window.SGPhysics.calcRoomVentilation(rm, baseSwgKW, cfg.hvacSafetyMarginPct);
+      return {
+        title: 'Switchroom Cooling, Airflow, Air Change Rate (ACH) & Ventilation Verdict',
+        badge: rv.verdictTitle,
+        resultText: `${fmt(rv.reqFlowLs, 0)} L/s (${fmt(rv.reqFlowM3h, 0)} m³/h · ${fmt(rv.ach, 1)} ACH) — ${rv.verdictCode === 'natural' ? 'Natural OK' : rv.verdictCode === 'mechanical' ? 'Mechanical Required' : 'Active AC Required'}`,
+        formula: 'V̇_req = Q_design / (ρ · c_p · ΔT)   |   ACH = (V̇_req × 3600) / V_room   |   V̇_nat = C_d · A_eff · √(2g · H_stack · ΔT / T_amb,K)',
+        inputs: [
+          {
+            name: 'Room Length (L)',
+            helpKey: 'room.dims',
+            val: `${rv.L} m`,
+            note: `Volume = ${fmt(rv.volumeM3, 1)} m³ · Floor = ${fmt(rv.floorAreaM2, 1)} m²`,
+            edit: { type: 'number', value: rm.lengthM, min: 1, max: 100, step: 0.5, unit: 'm', apply: (v) => (rm.lengthM = Math.max(1, Number(v) || 5)) },
+          },
+          {
+            name: 'Room Width (W)',
+            helpKey: 'room.dims',
+            val: `${rv.W} m`,
+            note: 'Internal room width',
+            edit: { type: 'number', value: rm.widthM, min: 1, max: 100, step: 0.5, unit: 'm', apply: (v) => (rm.widthM = Math.max(1, Number(v) || 5)) },
+          },
+          {
+            name: 'Room Height (H)',
+            helpKey: 'room.dims',
+            val: `${rv.H} m`,
+            note: 'Floor-to-ceiling internal height',
+            edit: { type: 'number', value: rm.heightM, min: 2, max: 30, step: 0.5, unit: 'm', apply: (v) => (rm.heightM = Math.max(2, Number(v) || 9)) },
+          },
+          {
+            name: 'Outdoor / Supply Temp (T_amb)',
+            helpKey: 'room.tamb',
+            val: `${rv.tAmb} °C`,
+            note: `Allowable rise ΔT = ${fmt(rv.deltaT, 1)} K`,
+            edit: { type: 'number', value: rm.ambientTempC, min: -10, max: 55, step: 1, unit: '°C', apply: (v) => (rm.ambientTempC = Number(v)) },
+          },
+          {
+            name: 'Max Permitted Room Temp (T_max)',
+            helpKey: 'room.tmax',
+            val: `${rv.tMax} °C`,
+            note: 'IEC 61439-1 standard: 35 °C avg / 40 °C max',
+            edit: { type: 'number', value: rm.maxRoomTempC, min: 15, max: 60, step: 1, unit: '°C', apply: (v) => (rm.maxRoomTempC = Number(v) || 35) },
+          },
+          {
+            name: 'Other Room Heat Gains',
+            helpKey: 'room.other',
+            val: `${fmt(rv.otherHeatKW, 2)} kW`,
+            note: `Design Total Q = ${fmt(rv.baseSwgKW, 3)}×(1+${rv.marginPct}%) + ${fmt(rv.otherHeatKW, 2)} = ${fmt(rv.designHeatKW, 3)} kW`,
+            edit: { type: 'number', value: rm.otherRoomHeatKW, min: 0, max: 500, step: 0.25, unit: 'kW', apply: (v) => (rm.otherRoomHeatKW = Math.max(0, Number(v) || 0)) },
+          },
+          {
+            name: 'Natural Louver Free Area (Each)',
+            helpKey: 'room.louver',
+            val: `${fmt(rv.louverAreaM2, 2)} m²`,
+            note: `Inlet & Exhaust each (${fmt(rv.louverAreaM2 / Math.SQRT2, 2)} m² effective)`,
+            edit: { type: 'number', value: rm.louverFreeAreaM2, min: 0.05, max: 20, step: 0.1, unit: 'm²', apply: (v) => (rm.louverFreeAreaM2 = Math.max(0.05, Number(v) || 0.5)) },
+          },
+          {
+            name: 'Vertical Stack Height (H_stack)',
+            helpKey: 'room.stack',
+            val: `${fmt(rv.stackHeightM, 1)} m`,
+            note: 'Height between low inlet & high exhaust centrelines',
+            edit: { type: 'number', value: rm.stackHeightM, min: 0.5, max: 25, step: 0.5, unit: 'm', apply: (v) => (rm.stackHeightM = Math.max(0.5, Number(v) || 4)) },
+          },
+        ],
+        steps: [
+          {
+            label: 'Step 1 — Switchroom Volume & Total Design Heat Rejection',
+            math: `V = ${rv.L} × ${rv.W} × ${rv.H} = ${fmt(rv.volumeM3, 1)} m³   |   Q_design = ${fmt(rv.baseSwgKW, 3)} × (1 + ${rv.marginPct}%) + ${fmt(rv.otherHeatKW, 2)} = ${fmt(rv.designHeatKW, 3)} kW (${Math.round(rv.designBtuHr).toLocaleString()} BTU/hr)`,
+            note: `Floor density = ${fmt(rv.heatDensityFloorWm2, 1)} W/m² · Volumetric density = ${fmt(rv.heatDensityVolWm3, 1)} W/m³.`,
+          },
+          {
+            label: 'Step 2 — Temperature Rise ΔT & Moist-Air Properties',
+            math: `ΔT = T_max − T_amb = ${rv.tMax} − ${rv.tAmb} = ${fmt(rv.deltaT, 1)} K   |   ρ = ${fmt(rv.rhoAir, 3)} kg/m³ · c_p = ${rv.cpAir} kJ/(kg·K) → ρ·c_p = ${fmt(rv.rhoCp, 3)} kJ/(m³·K)`,
+            note: 'Air density corrected for mean switchroom operating temperature.',
+          },
+          {
+            label: 'Step 3 — Required Cooling Airflow Rate (Sensible Heat Balance)',
+            math: rv.deltaT > 0.5
+              ? `V̇_req = ${fmt(rv.designHeatKW, 3)} / (${fmt(rv.rhoCp, 3)} × ${fmt(rv.deltaT, 1)}) = ${fmt(rv.reqFlowM3s, 3)} m³/s = ${fmt(rv.reqFlowLs, 0)} L/s = ${fmt(rv.reqFlowM3h, 0)} m³/h (${fmt(rv.reqFlowCfm, 0)} CFM)`
+              : 'ΔT ≤ 0.5 K — Outside-air ventilation cannot cool the room; Active Refrigeration / Air Conditioning required.',
+            note: 'Airflow required to hold room exhaust temperature at or below T_max.',
+          },
+          {
+            label: 'Step 4 — Required Air Change Rate per Hour (ACH)',
+            math: `ACH = V̇_req (m³/h) / V_room (m³) = ${fmt(rv.reqFlowM3h, 0)} / ${fmt(rv.volumeM3, 1)} = ${fmt(rv.ach, 2)} ACH`,
+            note: 'Natural ventilation is generally practical up to ~6 ACH; mechanical fans up to ~15–20 ACH.',
+          },
+          {
+            label: 'Step 5 — Natural Stack-Effect Buoyancy Check (CIBSE Guide A / AM10)',
+            math: `V̇_nat = ${rv.cd} × (${fmt(rv.louverAreaM2, 2)}/√2) × √(2 × 9.81 × ${fmt(rv.stackHeightM, 1)} × ${fmt(Math.max(0, rv.deltaT), 1)} / (${rv.tAmb}+273.15)) = ${fmt(rv.natFlowM3s, 3)} m³/s (${fmt(rv.natFlowM3h, 0)} m³/h · ${fmt(rv.natCapacityKW, 2)} kW capacity)`,
+            note: `Required louver free area for natural alone ≈ ${rv.reqLouverAreaM2 < 100 ? fmt(rv.reqLouverAreaM2, 2) + ' m² each' : 'Impractical'}. Estimated steady room temp with current louvers only ≈ ${fmt(rv.estNatRoomTempC, 1)} °C.`,
+          },
+        ],
+        commentary: [
+          rv.verdictDetail,
+          'Remember to size louvers for ~50% aerodynamic free area (e.g., 0.50 m² free area requires ~1.0 m² gross weather-louver opening) and check fire-damper / vermin-mesh pressure drops.',
+        ],
+      };
+    }
+
     return null;
   }
 

@@ -11,7 +11,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = '2.5.0';
+  const APP_VERSION = '2.6.0';
 
   function loadInitialProject() {
     try {
@@ -22,13 +22,14 @@
         const parsed = JSON.parse(json);
         if (parsed && parsed.columns && parsed.mainBusbar && parsed.config) {
           parsed.deviceLibrary = window.SGState.syncLibraryWithDefaults(parsed.deviceLibrary);
+          window.SGState.ensureExtras(parsed);
           return parsed;
         }
       }
     } catch (e) {
       console.warn('Could not decode shared URL state:', e);
     }
-    return window.SGState.loadProject();
+    return window.SGState.ensureExtras(window.SGState.loadProject());
   }
 
   let project = loadInitialProject();
@@ -98,11 +99,37 @@
   }
 
   function renderAll(skipInspectorRebuild) {
+    window.SGState.ensureExtras(project);
     window.SGState.saveProject(project);
     const allScenarios = window.SGPhysics.evaluateAllScenarios(project);
     const activeScObj = allScenarios.find((s) => s.id === project.activeScenario) || allScenarios[0];
     const evalRes = activeScObj.result;
     lastEvalRes = evalRes;
+
+    const isSimple = project.uiMode === 'simple';
+    const simpleWs = document.getElementById('simple-workspace');
+    const detailedWs = document.getElementById('detailed-workspace');
+    const summaryStrip = document.querySelector('.summary-strip');
+    const btnSimple = document.getElementById('mode-btn-simple');
+    const btnDetailed = document.getElementById('mode-btn-detailed');
+
+    if (btnSimple && btnDetailed) {
+      btnSimple.classList.toggle('active', isSimple);
+      btnDetailed.classList.toggle('active', !isSimple);
+    }
+    if (simpleWs && detailedWs) {
+      simpleWs.style.display = isSimple ? 'block' : 'none';
+      detailedWs.style.display = isSimple ? 'none' : 'flex';
+    }
+    if (summaryStrip) {
+      summaryStrip.style.display = isSimple ? 'none' : 'flex';
+    }
+
+    if (isSimple) {
+      renderSimpleWorkspace();
+      updateUndoBtn();
+      return;
+    }
 
     renderScenarioBar(allScenarios);
     renderKPIs(evalRes);
@@ -111,6 +138,7 @@
     if (activeTab === 'schedules') renderSchedulesView(evalRes, allScenarios);
     if (activeTab === 'library') renderLibraryView();
     if (activeTab === 'config') renderConfigView();
+    if (activeTab === 'room') renderRoomView(evalRes);
     if (activeTab === 'report') renderReportBuilderView(evalRes, allScenarios);
     if (!skipInspectorRebuild) renderInspector(evalRes);
     updateUndoBtn();
@@ -1899,6 +1927,7 @@
       { key: 'deviceSchedule', label: 'Devices, Eaton Fuses & Starters Table' },
       { key: 'deviceSubComponents', label: 'Expand Device Sub-Components (DOL/HRC)' },
       { key: 'enclosureAdvisory', label: 'IEC 60890 Surface & Heat Flux Advisory' },
+      { key: 'roomVentilation', label: 'Switchroom Cooling, Airflow & ACH Verdict' },
       { key: 'methodologyAppendix', label: 'Governing Equations Appendix' },
       { key: 'signOffBlock', label: 'Custom Notes & Sign-Off Table' },
     ];
@@ -2095,6 +2124,368 @@
     });
   }
 
+  // --- Reusable Switchroom Cooling & Ventilation Card (used in BOTH Simple Mode & Detailed Tab 6!) ---
+  function renderRoomCoolingCardHTML(rv, rm, prefix) {
+    return `
+      <div class="card">
+        <h3>
+          Switchroom Size, Temperatures &amp; Cooling Assessment
+          <button class="explain-chip" id="${prefix}-room-analyse">Analyse Airflow &amp; ACH ↗</button>
+        </h3>
+        <div class="form-grid-3">
+          <div class="field">
+            ${lbl('Room Length (m)', 'room.dims')}
+            <input type="number" id="${prefix}-rm-l" value="${rm.lengthM}" min="1" max="100" step="0.5" placeholder="5" />
+            <span class="field-hint">Ex: 5 m (L×W×H = ${rv.volumeM3.toFixed(0)} m³)</span>
+          </div>
+          <div class="field">
+            ${lbl('Room Width (m)', 'room.dims')}
+            <input type="number" id="${prefix}-rm-w" value="${rm.widthM}" min="1" max="100" step="0.5" placeholder="5" />
+            <span class="field-hint">Ex: 5 m (Floor = ${rv.floorAreaM2.toFixed(0)} m²)</span>
+          </div>
+          <div class="field">
+            ${lbl('Room Height (m)', 'room.dims')}
+            <input type="number" id="${prefix}-rm-h" value="${rm.heightM}" min="2" max="30" step="0.5" placeholder="9" />
+            <span class="field-hint">Ex: 3.5 m – 9 m</span>
+          </div>
+          <div class="field">
+            ${lbl('Supply / Ambient Temp (°C)', 'room.tamb')}
+            <input type="number" id="${prefix}-rm-tamb" value="${rm.ambientTempC}" min="-10" max="55" step="1" placeholder="25" />
+            <span class="field-hint">Typ: 25–30 °C outdoor air</span>
+          </div>
+          <div class="field">
+            ${lbl('Max Room Temp (°C)', 'room.tmax')}
+            <input type="number" id="${prefix}-rm-tmax" value="${rm.maxRoomTempC}" min="15" max="60" step="1" placeholder="35" />
+            <span class="field-hint">IEC 61439: 35°C avg / 40°C max</span>
+          </div>
+          <div class="field">
+            ${lbl('Other Room Heat (kW)', 'room.other')}
+            <input type="number" id="${prefix}-rm-other" value="${rm.otherRoomHeatKW}" min="0" max="500" step="0.25" placeholder="0" />
+            <span class="field-hint">UPS, Tx, lighting, other boards</span>
+          </div>
+          <div class="field">
+            ${lbl('Louver Free Area (m² ea)', 'room.louver')}
+            <input type="number" id="${prefix}-rm-louver" value="${rm.louverFreeAreaM2}" min="0.05" max="20" step="0.1" placeholder="0.5" />
+            <span class="field-hint">Typ: 0.3–1.5 m² (inlet &amp; exhaust)</span>
+          </div>
+          <div class="field">
+            ${lbl('Stack Height H_stack (m)', 'room.stack')}
+            <input type="number" id="${prefix}-rm-stack" value="${rm.stackHeightM}" min="0.5" max="25" step="0.5" placeholder="6" />
+            <span class="field-hint">Vertical sep. between louvers</span>
+          </div>
+          <div class="field">
+            ${lbl('Manual Heat Test Override', 'room.override')}
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="checkbox" id="${prefix}-rm-ov-en" ${rm.useOverrideHeatKW ? 'checked' : ''} style="width:16px;height:16px;flex:0 0 16px;margin:0;cursor:pointer;" title="Check to test any arbitrary kW (e.g. 6 kW)" />
+              <input type="number" id="${prefix}-rm-ov-kw" value="${rm.overrideHeatKW}" min="0" step="0.5" style="flex:1;min-width:72px;" ${rm.useOverrideHeatKW ? '' : 'disabled'} placeholder="6.0" />
+            </div>
+            <span class="field-hint">${rm.useOverrideHeatKW ? 'Using manual test kW!' : 'Auto: ' + rv.baseSwgKW.toFixed(2) + ' kW switchgear'}</span>
+          </div>
+        </div>
+
+        <div class="verdict-banner" style="margin-top:12px;border-left-color:${rv.verdictColor};">
+          <div class="v-tag" style="color:${rv.verdictColor};">Ventilation &amp; Cooling Recommendation</div>
+          <div class="v-title">${esc(rv.verdictTitle)}</div>
+          <p class="v-detail">${esc(rv.verdictDetail)}</p>
+        </div>
+
+        <div class="room-metrics-grid">
+          <div class="physics-box explainable" data-room-explain="1">
+            <div class="p-lbl">Total Design Heat Load</div>
+            <div class="p-val">${rv.designHeatKW.toFixed(2)} kW</div>
+            <div class="p-note">${Math.round(rv.designBtuHr).toLocaleString()} BTU/hr · ${rv.heatDensityFloorWm2.toFixed(0)} W/m² floor</div>
+          </div>
+          <div class="physics-box explainable" data-room-explain="1">
+            <div class="p-lbl">Required Airflow (ΔT = ${rv.deltaT.toFixed(1)} K)</div>
+            <div class="p-val">${rv.deltaT > 0.5 ? rv.reqFlowLs.toFixed(0) + ' L/s' : 'N/A (AC Req)'}</div>
+            <div class="p-note">${rv.reqFlowM3s.toFixed(3)} m³/s · ${rv.reqFlowM3h.toFixed(0)} m³/h · ${rv.reqFlowCfm.toFixed(0)} CFM</div>
+          </div>
+          <div class="physics-box explainable" data-room-explain="1">
+            <div class="p-lbl">Air Change Rate (ACH)</div>
+            <div class="p-val">${rv.deltaT > 0.5 ? rv.ach.toFixed(2) + ' ACH' : 'N/A'}</div>
+            <div class="p-note">Room Volume: ${rv.volumeM3.toFixed(1)} m³ (Natural ≤6 ACH)</div>
+          </div>
+          <div class="physics-box explainable" data-room-explain="1">
+            <div class="p-lbl">Natural Stack Capacity</div>
+            <div class="p-val">${rv.natCapacityKW.toFixed(2)} kW</div>
+            <div class="p-note">${rv.natFlowM3h.toFixed(0)} m³/h (${rv.natAch.toFixed(1)} ACH) · Est. Temp ${rv.estNatRoomTempC.toFixed(1)}°C</div>
+          </div>
+          <div class="physics-box explainable" data-room-explain="1">
+            <div class="p-lbl">Louver Area Needed (Natural)</div>
+            <div class="p-val">${rv.reqLouverAreaM2 < 100 ? rv.reqLouverAreaM2.toFixed(2) + ' m²' : 'Impractical'}</div>
+            <div class="p-note">Free area each (inlet &amp; exhaust) · Current: ${rv.louverAreaM2.toFixed(2)} m²</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function bindRoomCoolingEvents(container, prefix, swgKW) {
+    const rm = project.room;
+    const on = (id, fn) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', () => { pushUndo(); fn(el); renderAll(); });
+    };
+    on(`${prefix}-rm-l`, (el) => (rm.lengthM = Math.max(1, Number(el.value) || 5)));
+    on(`${prefix}-rm-w`, (el) => (rm.widthM = Math.max(1, Number(el.value) || 5)));
+    on(`${prefix}-rm-h`, (el) => (rm.heightM = Math.max(2, Number(el.value) || 9)));
+    on(`${prefix}-rm-tamb`, (el) => (rm.ambientTempC = Number(el.value)));
+    on(`${prefix}-rm-tmax`, (el) => (rm.maxRoomTempC = Number(el.value) || 35));
+    on(`${prefix}-rm-other`, (el) => (rm.otherRoomHeatKW = Math.max(0, Number(el.value) || 0)));
+    on(`${prefix}-rm-louver`, (el) => (rm.louverFreeAreaM2 = Math.max(0.05, Number(el.value) || 0.5)));
+    on(`${prefix}-rm-stack`, (el) => (rm.stackHeightM = Math.max(0.5, Number(el.value) || 4)));
+    on(`${prefix}-rm-ov-en`, (el) => (rm.useOverrideHeatKW = el.checked));
+    on(`${prefix}-rm-ov-kw`, (el) => (rm.overrideHeatKW = Math.max(0, Number(el.value) || 0)));
+
+    const openRoomExplain = () => openExplain('room.ventilation', { switchgearKW: swgKW });
+    const btn = document.getElementById(`${prefix}-room-analyse`);
+    if (btn) btn.addEventListener('click', openRoomExplain);
+    container.querySelectorAll('[data-room-explain]').forEach((box) => box.addEventListener('click', openRoomExplain));
+  }
+
+  // --- TAB 6 (Detailed Mode): Switchroom Cooling & Airflow ---
+  function renderRoomView(evalRes) {
+    const el = document.getElementById('room-container');
+    if (!el) return;
+    const swgKW = evalRes.totals.grandTotalKW;
+    const rv = window.SGPhysics.calcRoomVentilation(project.room, swgKW, project.config.hvacSafetyMarginPct);
+    el.innerHTML = renderRoomCoolingCardHTML(rv, project.room, 'det');
+    bindRoomCoolingEvents(el, 'det', swgKW);
+  }
+
+  // --- SIMPLE MODE WORKSPACE (Rapid Assessment + Seamless Upgrade to Detailed Mode) ---
+  function renderSimpleWorkspace() {
+    const ws = document.getElementById('simple-workspace');
+    if (!ws) return;
+    const sm = project.simpleMode;
+    const sim = window.SGPhysics.evaluateSimpleMode(project);
+    const act = sim.active;
+    const rv = window.SGPhysics.calcRoomVentilation(project.room, act.totalKW, project.config.hvacSafetyMarginPct);
+
+    const bbPresets = window.SGCatalog.BUSBAR_PRESETS.filter((p) => !p.id.startsWith('bb-v'));
+    const dolTemplates = project.deviceLibrary.filter((t) => t.category === 'DOL Starter' || t.category === 'Star-Delta Starter' || t.category === 'Soft Starter');
+    const vsdTemplates = project.deviceLibrary.filter((t) => t.category === 'VSD / Inverter');
+    const fdrTemplates = project.deviceLibrary.filter((t) => t.category === 'MCCB' || t.category === 'HRC Fuse-Switch' || t.category === 'MCB');
+
+    ws.innerHTML = `
+      <div class="simple-grid">
+        <!-- LEFT COLUMN: Minimal Rapid Inputs -->
+        <div>
+          <div class="card">
+            <h3>⚡ Simple Mode — Rapid Switchgear Heat Estimate <span class="card-subtitle">Fewer inputs for quick preliminary sizing</span></h3>
+            <div class="form-grid">
+              <div class="field full">
+                ${lbl('Main Busbar Rating & Construction', 'bb.preset')}
+                <select id="sm-bb">
+                  ${bbPresets.map((p) => `<option value="${p.id}" ${sm.busbarPresetId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
+                </select>
+                <span class="field-hint">Ex: 1600A = 2×75×6mm (900mm²), 2500A = 2×100×10mm</span>
+              </div>
+              <div class="field full">
+                ${lbl('Switchboard Topology', 'simple.topology')}
+                <select id="sm-topo">
+                  <option value="single" ${sm.topology === 'single' ? 'selected' : ''}>Single Incomer</option>
+                  <option value="single_interconn" ${sm.topology === 'single_interconn' ? 'selected' : ''}>Single Incomer + Firm Supply Interconnector (A→B)</option>
+                  <option value="dual_coupler" ${sm.topology === 'dual_coupler' ? 'selected' : ''}>Dual Incomer + Bus-Section Coupler</option>
+                  <option value="dual_coupler_interconn" ${sm.topology === 'dual_coupler_interconn' ? 'selected' : ''}>Dual Incomer + Bus Coupler + Interconnector</option>
+                </select>
+                <span class="field-hint">Defines incomer, coupler &amp; A→B interconnector columns</span>
+              </div>
+              <div class="field">
+                ${lbl('Estimated Columns', 'col.width')}
+                <input type="number" id="sm-cols" value="${sm.columnCount}" min="2" max="14" step="1" />
+                <span class="field-hint">Typ: 4–8 columns (~${sim.boardLenM.toFixed(1)} m busbar)</span>
+              </div>
+              <div class="field">
+                ${lbl('Manual AC Factor (S)', 'bb.manualS')}
+                <input type="number" id="sm-s" value="${sm.manualSFactor}" min="1.0" max="2.0" step="0.05" />
+                <span class="field-hint">Typ: 1.20 (2-bar Cu)</span>
+              </div>
+            </div>
+
+            <div class="insp-section-title" style="margin-top:12px;">Quick Circuit &amp; Starter Counts</div>
+            <div class="form-grid" style="margin-top:6px;">
+              <div class="field">
+                ${lbl('Motor Starters (Qty)', 'tier.template')}
+                <input type="number" id="sm-dol-n" value="${sm.dolCount}" min="0" max="30" step="1" />
+                <span class="field-hint">DOL / Star-Delta / Soft Starters</span>
+              </div>
+              <div class="field">
+                ${lbl('Typical Starter Size', 'tier.template')}
+                <select id="sm-dol-tpl">
+                  ${dolTemplates.map((t) => `<option value="${t.id}" ${sm.dolTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field">
+                ${lbl('VSD / Inverter Drives (Qty)', 'tier.template')}
+                <input type="number" id="sm-vsd-n" value="${sm.vsdCount}" min="0" max="20" step="1" />
+                <span class="field-hint">High heat (~2.5–3.5% kW)</span>
+              </div>
+              <div class="field">
+                ${lbl('Typical VSD Size', 'tier.template')}
+                <select id="sm-vsd-tpl">
+                  ${vsdTemplates.map((t) => `<option value="${t.id}" ${sm.vsdTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field">
+                ${lbl('Outgoing Feeders / Fuses (Qty)', 'tier.template')}
+                <input type="number" id="sm-fdr-n" value="${sm.feederCount}" min="0" max="30" step="1" />
+                <span class="field-hint">MCCBs or Eaton HRC Fuse-Switches</span>
+              </div>
+              <div class="field">
+                ${lbl('Typical Feeder / HRC Fuse', 'tier.template')}
+                <select id="sm-fdr-tpl">
+                  ${fdrTemplates.map((t) => `<option value="${t.id}" ${sm.feederTemplateId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+
+            <div class="form-grid-3" style="margin-top:10px;">
+              <div class="field">
+                ${lbl('Avg Load (%)', 'simple.loadPct')}
+                <input type="number" id="sm-load" value="${sm.avgLoadPct}" min="10" max="100" step="5" />
+                <span class="field-hint">Typ: 70–80%</span>
+              </div>
+              <div class="field">
+                ${lbl('Board RDF', 'cfg.rdf')}
+                <input type="number" id="sm-rdf" value="${sm.rdf}" min="0.4" max="1.0" step="0.05" />
+                <span class="field-hint">Typ: 0.80–0.90</span>
+              </div>
+              <div class="field">
+                ${lbl('Future Growth (%)', 'cfg.growth')}
+                <input type="number" id="sm-fut" value="${sm.futureGrowthPct}" min="0" max="100" step="5" />
+                <span class="field-hint">Typ: 15–25%</span>
+              </div>
+            </div>
+            ${
+              sm.topology === 'single_interconn' || sm.topology === 'dual_coupler_interconn'
+                ? `<div class="field" style="margin-top:8px;">
+                    ${lbl('N-1 Interconnector Transfer Load to B-Side Board (A)', 'tier.n1Transfer')}
+                    <input type="number" id="sm-n1" value="${sm.n1TransferA}" min="0" max="4000" step="50" />
+                    <span class="field-hint">Typ: 600–1600 A exported during N-1 firm-supply outage</span>
+                  </div>`
+                : ''
+            }
+          </div>
+
+          <div class="expand-cta-box">
+            <div>
+              <div style="font-weight:800;font-size:13.5px;color:var(--text-0);">Ready to refine individual circuits, SLD &amp; GA?</div>
+              <div style="font-size:11.5px;color:var(--text-2);">Auto-generates columns, incomers, starters, Eaton HRC fuses &amp; busbars directly from your Simple Mode inputs above.</div>
+            </div>
+            <button id="sm-expand-btn" class="btn btn-primary">→ Convert &amp; Open Detailed Mode</button>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Instant Live kW Results + Switchroom Cooling Assessment -->
+        <div>
+          <div class="card">
+            <h3>
+              Estimated Switchgear Heat Output (kW)
+              <div class="action-row">
+                ${[
+                  ['normal', 'Normal'],
+                  ['n1_transfer', 'N-1 Transfer'],
+                  ['normal_future', 'Norm+Future'],
+                  ['worst_case', 'Worst-Case'],
+                ]
+                  .map(
+                    ([sid, slbl]) =>
+                      `<button class="btn btn-sm ${project.activeScenario === sid ? 'btn-primary' : 'btn-secondary'}" data-sm-sc="${sid}">${slbl}</button>`
+                  )
+                  .join('')}
+              </div>
+            </h3>
+            <div class="room-metrics-grid">
+              <div class="kpi-card hero">
+                <span class="kpi-label">Active Simple Estimate</span>
+                <span class="kpi-value">${act.totalKW.toFixed(2)} kW</span>
+                <span class="kpi-sub">${act.totalW.toFixed(0)} W · ${Math.round(act.totalW * 3.41214).toLocaleString()} BTU/hr</span>
+              </div>
+              <div class="kpi-card">
+                <span class="kpi-label">Busbars &amp; Joints</span>
+                <span class="kpi-value">${(act.busbarW / 1000).toFixed(2)} kW</span>
+                <span class="kpi-sub">${act.busbarW.toFixed(0)} W · Peak ${act.hbbPeakWPerM.toFixed(0)} W/m</span>
+              </div>
+              <div class="kpi-card">
+                <span class="kpi-label">Devices &amp; Drives</span>
+                <span class="kpi-value">${(act.devicesW / 1000).toFixed(2)} kW</span>
+                <span class="kpi-sub">VSD ${act.vsdLoss.toFixed(0)}W · DOL ${act.dolLoss.toFixed(0)}W · Fdr ${act.fdrLoss.toFixed(0)}W</span>
+              </div>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr><th>Scenario</th><th class="num">Total (kW)</th><th class="num">Busbars (W)</th><th class="num">Devices (W)</th><th class="num">Load (A)</th><th class="num">HVAC (+${project.config.hvacSafetyMarginPct}%)</th></tr>
+              </thead>
+              <tbody>
+                ${[
+                  ['normal', 'Normal (N)'],
+                  ['n1_transfer', 'N-1 Firm Transfer'],
+                  ['normal_future', 'Normal + Future'],
+                  ['worst_case', 'Worst-Case (N-1 + Future)'],
+                ]
+                  .map(([sid, slbl]) => {
+                    const r = sim.scenarios[sid];
+                    const hl = sid === project.activeScenario ? 'font-weight:700;background:var(--accent-dim);' : '';
+                    return `<tr style="${hl}">
+                      <td>${slbl}</td>
+                      <td class="num">${r.totalKW.toFixed(3)}</td>
+                      <td class="num">${r.busbarW.toFixed(0)}</td>
+                      <td class="num">${r.devicesW.toFixed(0)}</td>
+                      <td class="num">${r.totalBoardA.toFixed(0)}</td>
+                      <td class="num">${(r.totalKW * (1 + project.config.hvacSafetyMarginPct / 100)).toFixed(2)} kW</td>
+                    </tr>`;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+
+          ${renderRoomCoolingCardHTML(rv, project.room, 'sm')}
+        </div>
+      </div>
+    `;
+
+    // Bind Simple Mode inputs
+    const onSm = (id, fn) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', () => { pushUndo(); fn(el.value); renderAll(); });
+    };
+    onSm('sm-bb', (v) => (sm.busbarPresetId = v));
+    onSm('sm-topo', (v) => (sm.topology = v));
+    onSm('sm-cols', (v) => (sm.columnCount = Math.max(2, parseInt(v, 10) || 5)));
+    onSm('sm-s', (v) => (sm.manualSFactor = Math.max(1.0, Number(v) || 1.2)));
+    onSm('sm-dol-n', (v) => (sm.dolCount = Math.max(0, parseInt(v, 10) || 0)));
+    onSm('sm-dol-tpl', (v) => (sm.dolTemplateId = v));
+    onSm('sm-vsd-n', (v) => (sm.vsdCount = Math.max(0, parseInt(v, 10) || 0)));
+    onSm('sm-vsd-tpl', (v) => (sm.vsdTemplateId = v));
+    onSm('sm-fdr-n', (v) => (sm.feederCount = Math.max(0, parseInt(v, 10) || 0)));
+    onSm('sm-fdr-tpl', (v) => (sm.feederTemplateId = v));
+    onSm('sm-load', (v) => (sm.avgLoadPct = Math.min(100, Math.max(10, Number(v) || 75))));
+    onSm('sm-rdf', (v) => (sm.rdf = Math.min(1, Math.max(0.3, Number(v) || 0.9))));
+    onSm('sm-fut', (v) => (sm.futureGrowthPct = Math.max(0, Number(v) || 0)));
+    onSm('sm-n1', (v) => (sm.n1TransferA = Math.max(0, Number(v) || 0)));
+
+    ws.querySelectorAll('[data-sm-sc]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        project.activeScenario = btn.dataset.smSc;
+        renderAll();
+      });
+    });
+
+    document.getElementById('sm-expand-btn').addEventListener('click', () => {
+      pushUndo();
+      window.SGState.applySimpleToDetailed(project);
+      selection = { type: 'mainBusbar' };
+      activeTab = 'sld';
+      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'sld'));
+      document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'tab-sld'));
+      renderAll();
+    });
+
+    bindRoomCoolingEvents(ws, 'sm', act.totalKW);
+  }
+
   // --- Theme Persistence & Switcher ---
   const THEME_KEY = 'sg_heat_calc_theme_v1';
   function applyTheme(themeId) {
@@ -2119,6 +2510,16 @@
     document.getElementById('theme-select').addEventListener('change', (e) => {
       applyTheme(e.target.value);
       renderAll(true);
+    });
+
+    // Simple Mode vs Detailed Mode Toggle
+    document.getElementById('mode-btn-simple').addEventListener('click', () => {
+      project.uiMode = 'simple';
+      renderAll();
+    });
+    document.getElementById('mode-btn-detailed').addEventListener('click', () => {
+      project.uiMode = 'detailed';
+      renderAll();
     });
     document.querySelectorAll('.tab-btn').forEach((btn) => {
       btn.addEventListener('click', () => {

@@ -527,6 +527,46 @@ window.SGReport = (function () {
       `);
     }
 
+    // 11.5 Switchroom Cooling, Airflow & Ventilation Verdict
+    if (s.roomVentilation && project.room) {
+      const n = nextNum();
+      const rv = window.SGPhysics.calcRoomVentilation(project.room, t.grandTotalKW, project.config.hvacSafetyMarginPct);
+      sections.push(`
+        <div class="print-section">
+          <h2>${n}. Switchroom Cooling, Airflow &amp; Ventilation Assessment</h2>
+          <p class="rep-p">
+            <strong>Verdict: ${esc(rv.verdictTitle)}</strong> — ${esc(rv.verdictDetail)}
+          </p>
+          <table class="print-table">
+            <thead>
+              <tr>
+                <th>Room Size (L×W×H)</th>
+                <th class="num">Volume (m³)</th>
+                <th class="num">Design Heat (kW)</th>
+                <th class="num">T_amb → T_max (ΔT)</th>
+                <th class="num">Required Airflow</th>
+                <th class="num">Air Change Rate</th>
+                <th class="num">Natural Stack Cap.</th>
+                <th class="num">Est. Natural Temp</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>${rv.L} × ${rv.W} × ${rv.H} m</td>
+                <td class="num">${rv.volumeM3.toFixed(1)}</td>
+                <td class="num">${rv.designHeatKW.toFixed(2)}</td>
+                <td class="num">${rv.tAmb}°C → ${rv.tMax}°C (${rv.deltaT.toFixed(1)} K)</td>
+                <td class="num">${rv.reqFlowLs.toFixed(0)} L/s (${rv.reqFlowM3h.toFixed(0)} m³/h)</td>
+                <td class="num"><strong>${rv.ach.toFixed(1)} ACH</strong></td>
+                <td class="num">${rv.natCapacityKW.toFixed(2)} kW (${rv.natFlowM3h.toFixed(0)} m³/h)</td>
+                <td class="num">${rv.estNatRoomTempC.toFixed(1)} °C</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `);
+    }
+
     // 12. Methodology & Equations Appendix
     if (s.methodologyAppendix) {
       const n = nextNum();
@@ -702,6 +742,16 @@ window.SGReport = (function () {
       out.push(h2(`${nextNum()}. IEC 60890 Enclosure Surface & Heat Flux Advisory`));
       out.push(`Overall Size: ${evalRes.totalWidthMm}W x ${evalRes.panelHeightMm}H x ${project.config.panelDepthMm}D mm (${project.config.installationType})`);
       out.push(`Effective Area Ae: ${t.effectiveAreaM2.toFixed(2)} m2 | Avg Heat Flux: ${t.heatFluxWPerM2.toFixed(1)} W/m2`);
+    }
+
+    if (s.roomVentilation && project.room) {
+      const rv = window.SGPhysics.calcRoomVentilation(project.room, t.grandTotalKW, project.config.hvacSafetyMarginPct);
+      out.push(h2(`${nextNum()}. Switchroom Cooling, Airflow & Ventilation Assessment`));
+      out.push(`Verdict:          ${rv.verdictTitle}`);
+      out.push(`Room Dimensions:  ${rv.L} x ${rv.W} x ${rv.H} m (Volume = ${rv.volumeM3.toFixed(1)} m3, Floor = ${rv.floorAreaM2.toFixed(1)} m2)`);
+      out.push(`Design Heat Load: ${rv.designHeatKW.toFixed(3)} kW (${Math.round(rv.designBtuHr).toLocaleString()} BTU/hr) | T_amb=${rv.tAmb}C -> T_max=${rv.tMax}C (dT=${rv.deltaT.toFixed(1)} K)`);
+      out.push(`Required Airflow: ${rv.reqFlowM3s.toFixed(3)} m3/s | ${rv.reqFlowLs.toFixed(0)} L/s | ${rv.reqFlowM3h.toFixed(0)} m3/h | ${rv.reqFlowCfm.toFixed(0)} CFM | ${rv.ach.toFixed(2)} ACH`);
+      out.push(`Natural Stack:    ${rv.natCapacityKW.toFixed(2)} kW capacity (${rv.natFlowM3h.toFixed(0)} m3/h via ${rv.louverAreaM2} m2 louvers @ ${rv.stackHeightM} m stack) | Est Room Temp = ${rv.estNatRoomTempC.toFixed(1)} C`);
     }
 
     if (s.methodologyAppendix) {

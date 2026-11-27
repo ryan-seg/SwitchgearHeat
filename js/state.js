@@ -467,6 +467,9 @@ window.SGState = (function () {
         },
       ],
       deviceLibrary: lib,
+      uiMode: 'detailed',
+      simpleMode: createDefaultSimpleMode(),
+      room: createDefaultRoomConfig(),
       reportConfig: createDefaultReportConfig(),
     };
   }
@@ -591,6 +594,239 @@ window.SGState = (function () {
     return p;
   }
 
+  function createDefaultSimpleMode() {
+    return {
+      busbarPresetId: 'bb-1600',
+      material: 'cu_100',
+      busbarTempC: 70,
+      manualSFactor: 1.2,
+      topology: 'single_interconn', // 'single' | 'single_interconn' | 'dual_coupler' | 'dual_coupler_interconn'
+      columnCount: 5,
+      dolCount: 4,
+      dolTemplateId: 'dol-37kw',
+      vsdCount: 1,
+      vsdTemplateId: 'vsd-45kw',
+      feederCount: 4,
+      feederTemplateId: 'fuse-250',
+      avgLoadPct: 75,
+      rdf: 0.9,
+      n1TransferA: 850,
+      futureGrowthPct: 20,
+    };
+  }
+
+  function createDefaultRoomConfig() {
+    return {
+      lengthM: 5.0,
+      widthM: 5.0,
+      heightM: 9.0,
+      ambientTempC: 25,
+      maxRoomTempC: 35,
+      otherRoomHeatKW: 0.0,
+      louverFreeAreaM2: 0.5,
+      stackHeightM: 6.0,
+      dischargeCoeff: 0.6,
+      useOverrideHeatKW: false,
+      overrideHeatKW: 6.0,
+    };
+  }
+
+  function ensureExtras(project) {
+    if (!project.uiMode) project.uiMode = 'detailed'; // 'simple' | 'detailed'
+    project.simpleMode = Object.assign(createDefaultSimpleMode(), project.simpleMode || {});
+    project.room = Object.assign(createDefaultRoomConfig(), project.room || {});
+    ensureReportConfig(project);
+    return project;
+  }
+
+  /**
+   * Synthesize a complete Detailed Switchboard (columns, tiers, main busbar,
+   * incomer/coupler/interconnector, starters, VSDs, feeders) directly from Simple Mode selections!
+   */
+  function applySimpleToDetailed(project) {
+    ensureExtras(project);
+    const sm = project.simpleMode;
+    const lib = project.deviceLibrary;
+    const presets = window.SGCatalog.BUSBAR_PRESETS;
+    const bbPreset = presets.find((p) => p.id === sm.busbarPresetId) || presets[3];
+
+    // 1. Update Main Busbar & Global Config from Simple Mode
+    project.mainBusbar.ratedCurrentA = bbPreset.ratedCurrentA;
+    project.mainBusbar.material = sm.material || 'cu_100';
+    project.mainBusbar.barsPerPhase = bbPreset.barsPerPhase;
+    project.mainBusbar.widthMm = bbPreset.widthMm;
+    project.mainBusbar.thicknessMm = bbPreset.thicknessMm;
+    project.mainBusbar.gapMm = bbPreset.gapMm;
+    project.mainBusbar.phaseSpacingMm = bbPreset.phaseSpacingMm;
+    project.mainBusbar.certRef = bbPreset.certRef;
+    project.mainBusbar.operatingTempC = Number(sm.busbarTempC || 70);
+    project.mainBusbar.acFactorMode = 'manual';
+    project.mainBusbar.manualSFactor = Number(sm.manualSFactor || 1.2);
+
+    project.config.diversityFactorRDF = Number(sm.rdf || 0.9);
+    project.config.globalFutureGrowthPct = Number(sm.futureGrowthPct || 20);
+
+    // 2. Build Columns from Simple Mode Topology & Circuit Counts
+    const cols = [];
+    const incTplId = bbPreset.ratedCurrentA >= 2500 ? 'acb-2500' : 'acb-1600';
+    const loadFactor = Math.min(1, Math.max(0.1, Number(sm.avgLoadPct || 75) / 100));
+
+    // COL-01: Main Incomer A
+    cols.push({
+      id: uid('col'),
+      name: 'COL-01 Incomer A',
+      widthMm: 800,
+      verticalBusbar: null,
+      tiers: [
+        makeTierFromTemplate(incTplId, {
+          tag: 'INC-A',
+          description: `Main Incomer ACB ${bbPreset.ratedCurrentA}A`,
+          role: 'incomer',
+          incomerState: 'closed',
+        }, lib),
+      ],
+    });
+
+    // Motor Starters Column(s) (up to 5 tiers per column)
+    const nDol = Math.max(0, parseInt(sm.dolCount, 10) || 0);
+    let mNum = 1;
+    for (let i = 0; i < nDol; i += 5) {
+      const batch = Math.min(5, nDol - i);
+      const tiers = [];
+      for (let k = 0; k < batch; k++) {
+        tiers.push(
+          makeTierFromTemplate(sm.dolTemplateId || 'dol-37kw', {
+            tag: `M-${100 + mNum}`,
+            description: `Motor Starter ${mNum} (from Simple Mode)`,
+            loadFactor,
+          }, lib)
+        );
+        mNum += 1;
+      }
+      cols.push({
+        id: uid('col'),
+        name: `COL-0${cols.length + 1} MCC Starters`,
+        widthMm: 800,
+        verticalBusbar: JSON.parse(JSON.stringify(project.defaultVerticalBusbar)),
+        tiers,
+      });
+    }
+
+    // VSD / Drives Column(s) (up to 3 drives per column)
+    const nVsd = Math.max(0, parseInt(sm.vsdCount, 10) || 0);
+    let vNum = 1;
+    for (let i = 0; i < nVsd; i += 3) {
+      const batch = Math.min(3, nVsd - i);
+      const tiers = [];
+      for (let k = 0; k < batch; k++) {
+        tiers.push(
+          makeTierFromTemplate(sm.vsdTemplateId || 'vsd-45kw', {
+            tag: `VSD-${200 + vNum}`,
+            description: `Variable Speed Drive ${vNum} (from Simple Mode)`,
+            loadFactor,
+          }, lib)
+        );
+        vNum += 1;
+      }
+      cols.push({
+        id: uid('col'),
+        name: `COL-0${cols.length + 1} VSD Drives`,
+        widthMm: 800,
+        verticalBusbar: JSON.parse(JSON.stringify(project.defaultVerticalBusbar)),
+        tiers,
+      });
+    }
+
+    // Optional Bus-Section Coupler in middle
+    const isDual = sm.topology === 'dual_coupler' || sm.topology === 'dual_coupler_interconn';
+    if (isDual) {
+      cols.push({
+        id: uid('col'),
+        name: `COL-0${cols.length + 1} Bus Coupler`,
+        widthMm: 800,
+        verticalBusbar: null,
+        tiers: [
+          makeTierFromTemplate('coupler-2500', {
+            tag: 'BC-1',
+            description: 'Bus-Section Coupler ACB',
+            role: 'bus_coupler',
+            couplerState: 'open',
+          }, lib),
+        ],
+      });
+    }
+
+    // Outgoing Feeders / HRC Fuses Column(s) (up to 5 per column)
+    const nFdr = Math.max(0, parseInt(sm.feederCount, 10) || 0);
+    let fNum = 1;
+    for (let i = 0; i < nFdr; i += 5) {
+      const batch = Math.min(5, nFdr - i);
+      const tiers = [];
+      for (let k = 0; k < batch; k++) {
+        const tpl = lib.find((t) => t.id === (sm.feederTemplateId || 'fuse-250')) || lib[0];
+        tiers.push(
+          makeTierFromTemplate(tpl.id, {
+            tag: `F-${300 + fNum}`,
+            description: `Outgoing Feeder ${fNum} (${tpl.category})`,
+            loadInputMode: 'amps',
+            operatingCurrentA: Math.round(tpl.ratedCurrentA * loadFactor),
+            loadFactor: 1.0,
+          }, lib)
+        );
+        fNum += 1;
+      }
+      cols.push({
+        id: uid('col'),
+        name: `COL-0${cols.length + 1} Outgoing Feeders`,
+        widthMm: 600,
+        verticalBusbar: JSON.parse(JSON.stringify(project.defaultVerticalBusbar)),
+        tiers,
+      });
+    }
+
+    // Optional Firm Supply Interconnector Column
+    const hasIC = sm.topology === 'single_interconn' || sm.topology === 'dual_coupler_interconn';
+    if (hasIC) {
+      cols.push({
+        id: uid('col'),
+        name: `COL-0${cols.length + 1} Interconnector`,
+        widthMm: 800,
+        verticalBusbar: Object.assign(JSON.parse(JSON.stringify(project.mainBusbar)), { label: 'Interconnector Riser' }),
+        tiers: [
+          makeTierFromTemplate('interconn-1600', {
+            tag: 'IC-AB',
+            description: 'Interconnector to MSB-B (Firm Supply Link)',
+            role: 'interconnector',
+            normalTransferCurrentA: 0,
+            n1TransferCurrentA: Number(sm.n1TransferA || 850),
+          }, lib),
+        ],
+      });
+    }
+
+    // Optional Incomer B if Dual Incomer topology
+    if (isDual) {
+      cols.push({
+        id: uid('col'),
+        name: `COL-0${cols.length + 1} Incomer B`,
+        widthMm: 800,
+        verticalBusbar: null,
+        tiers: [
+          makeTierFromTemplate(incTplId, {
+            tag: 'INC-B',
+            description: `Main Incomer B ACB ${bbPreset.ratedCurrentA}A`,
+            role: 'incomer',
+            incomerState: 'closed',
+          }, lib),
+        ],
+      });
+    }
+
+    project.columns = cols;
+    project.uiMode = 'detailed';
+    return project;
+  }
+
   function createDefaultReportConfig() {
     return {
       preset: 'standard', // 'executive' | 'standard' | 'full_audit' | 'drawings_only' | 'custom'
@@ -620,6 +856,7 @@ window.SGState = (function () {
         deviceSchedule: true,
         deviceSubComponents: false,
         enclosureAdvisory: true,
+        roomVentilation: true,
         methodologyAppendix: false,
         signOffBlock: true,
       },
@@ -653,6 +890,7 @@ window.SGState = (function () {
         deviceSchedule: false,
         deviceSubComponents: false,
         enclosureAdvisory: true,
+        roomVentilation: true,
         methodologyAppendix: false,
         signOffBlock: true,
       };
@@ -675,6 +913,7 @@ window.SGState = (function () {
         deviceSchedule: true,
         deviceSubComponents: false,
         enclosureAdvisory: true,
+        roomVentilation: true,
         methodologyAppendix: false,
         signOffBlock: true,
       };
@@ -774,7 +1013,7 @@ window.SGState = (function () {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.columns && parsed.mainBusbar && parsed.config) {
           parsed.deviceLibrary = syncLibraryWithDefaults(parsed.deviceLibrary);
-          ensureReportConfig(parsed);
+          ensureExtras(parsed);
           return parsed;
         }
       }
@@ -805,6 +1044,10 @@ window.SGState = (function () {
     createDefaultProject,
     createDualIncomerProject,
     createBlankProject,
+    createDefaultSimpleMode,
+    createDefaultRoomConfig,
+    applySimpleToDetailed,
+    ensureExtras,
     createDefaultReportConfig,
     applyReportPreset,
     ensureReportConfig,
